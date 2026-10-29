@@ -289,3 +289,58 @@ def test_422_email_et_telephone_invalides(client):
     assert rep.status_code == 422
     champs = [d["champ"] for d in rep.json()["details"]]
     assert "client_email" in champs and "client_telephone" in champs
+
+
+# ---------- Espace salon ----------
+
+def test_salon_annule_moins_de_24h_avant(client, session):
+    pid = creer_prestation(client)
+    rdv = RendezVous(prestation_id=pid, client_nom="Test", client_email="t@example.com",
+                     client_telephone="0612345678",
+                     debut=datetime.now().replace(second=0, microsecond=0) + timedelta(hours=2))
+    session.add(rdv)
+    session.commit()
+    session.refresh(rdv)
+    assert client.delete(f"/rendez-vous/{rdv.id}", headers=ADMIN).status_code == 204
+
+
+def test_salon_deplace_un_rendez_vous(client):
+    rdv = reserver(client)
+    rep = client.patch(f"/rendez-vous/{rdv['id']}", json={"debut": creneau(16)}, headers=ADMIN)
+    assert rep.status_code == 200
+
+
+def test_salon_reserve_pour_un_client(client):
+    pid = creer_prestation(client)
+    rep = client.post("/salon/rendez-vous", json=donnees_rdv(pid, creneau(11)), headers=ADMIN)
+    assert rep.status_code == 201
+    assert client.post("/salon/rendez-vous", json=donnees_rdv(pid, creneau(13))).status_code == 401
+
+
+def test_lister_les_rendez_vous_a_venir(client):
+    reserver(client, creneau(10, dans_jours=3))
+    rep = client.get("/rendez-vous", params={"depuis": date.today().isoformat()}, headers=ADMIN)
+    assert len(rep.json()) == 1
+    loin = (date.today() + timedelta(days=30)).isoformat()
+    assert client.get("/rendez-vous", params={"depuis": loin}, headers=ADMIN).json() == []
+
+
+def test_modifier_une_prestation(client):
+    pid = creer_prestation(client)
+    rep = client.patch(f"/prestations/{pid}", json={"prix": 40}, headers=ADMIN)
+    assert rep.status_code == 200
+    assert rep.json()["prix"] == 40 and rep.json()["nom"] == "Coupe femme"
+    assert client.patch(f"/prestations/{pid}", json={"prix": 50}).status_code == 401
+
+
+def test_supprimer_une_prestation(client):
+    pid = creer_prestation(client)
+    assert client.delete(f"/prestations/{pid}").status_code == 401
+    assert client.delete(f"/prestations/{pid}", headers=ADMIN).status_code == 204
+    assert client.get("/prestations").json() == []
+
+
+def test_impossible_de_supprimer_une_prestation_reservee(client):
+    rdv = reserver(client)
+    rep = client.delete(f"/prestations/{rdv['prestation_id']}", headers=ADMIN)
+    assert rep.status_code == 409

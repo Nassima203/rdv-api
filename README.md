@@ -125,9 +125,12 @@ J'ai enregistré le projet avec Git, puis je l'ai publié sur GitHub.
 |--------------------------|----------|-----------------------------|--------------------------------|
 | Voir les prestations     | `GET`    | `/prestations`              | Tout le monde                  |
 | Créer une prestation     | `POST`   | `/prestations`              | 🔒 Le salon (clé admin)        |
+| Modifier une prestation  | `PATCH`  | `/prestations/{id}`         | 🔒 Le salon (clé admin)        |
+| Supprimer une prestation | `DELETE` | `/prestations/{id}`         | 🔒 Le salon (clé admin)        |
 | Voir les créneaux libres | `GET`    | `/creneaux?jour=2026-10-20` | Tout le monde                  |
 | Réserver                 | `POST`   | `/rendez-vous`              | Tout le monde (5 par heure)    |
-| Voir les rendez-vous     | `GET`    | `/rendez-vous`              | 🔒 Le salon (clé admin)        |
+| Réserver pour un client  | `POST`   | `/salon/rendez-vous`        | 🔒 Le salon (sans limite)      |
+| Voir les rendez-vous     | `GET`    | `/rendez-vous?jour=` ou `?depuis=` | 🔒 Le salon (clé admin) |
 | Voir un rendez-vous      | `GET`    | `/rendez-vous/{id}`         | 🔑 Le client (jeton) ou le salon |
 | Déplacer                 | `PATCH`  | `/rendez-vous/{id}`         | 🔑 Le client (jeton) ou le salon |
 | Annuler                  | `DELETE` | `/rendez-vous/{id}`         | 🔑 Le client (jeton) ou le salon |
@@ -145,6 +148,14 @@ J'ai enregistré le projet avec Git, puis je l'ai publié sur GitHub.
 | **422** | Données invalides (email, téléphone, horaire…)     |
 | **429** | Trop de demandes depuis la même connexion          |
 
+Le salon (clé admin) peut déplacer ou annuler un rendez-vous même moins de 24 h avant : la règle des 24 h ne s'applique qu'aux clients.
+
+* * *
+
+## 🗓️ Espace salon
+
+Une page d'administration est intégrée au site Webflow ([/admin](https://maison-lumen-c4b75a.webflow.io/admin)). Elle ne contient aucun secret : le salon s'y connecte avec la clé admin, gardée seulement le temps de la session du navigateur. On peut y voir le planning jour par jour, déplacer ou annuler un rendez-vous, en ajouter un pris par téléphone, et gérer les prestations.
+
 * * *
 
 ## 🔐 Sécurité
@@ -160,7 +171,7 @@ L'API est appelée par un site public ([Maison Lumen](https://maison-lumen-c4b75
 - **CORS** limité au site du salon, et **en-têtes de sécurité** (`nosniff`, `DENY`…) sur chaque réponse.
 - **Validation Pydantic** de toutes les entrées et requêtes SQLModel paramétrées (pas d'injection SQL).
 
-Ces protections sont vérifiées par les tests (`python -m pytest -v` : **27 tests**, dont 12 dédiés à la sécurité).
+Ces protections sont vérifiées par les tests (`python -m pytest -v` : **34 tests**, dont 12 dédiés à la sécurité et 7 à l'espace salon).
 
 Dans `/docs`, les routes protégées ont un cadenas : bouton **Authorize**, puis la clé admin.
 

@@ -35,6 +35,13 @@ class PrestationPublic(PrestationBase):
     id: int
 
 
+class PrestationModification(SQLModel):
+    """Pour l'espace salon : on ne change que les champs envoyés."""
+    nom: Optional[str] = Field(default=None, min_length=2, max_length=100)
+    prix: Optional[float] = Field(default=None, gt=0, le=1000)
+    description: Optional[str] = Field(default=None, max_length=300)
+
+
 # ---------- Règle commune : un horaire de rendez-vous valide ----------
 
 TELEPHONE_FR = re.compile(r"^(?:\+33|0)[1-9](?:[ .-]?\d{2}){4}$")

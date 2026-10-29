@@ -25,6 +25,7 @@ from app.database import creer_tables, get_session
 from app.models import (
     Prestation,
     PrestationCreate,
+    PrestationModification,
     PrestationPublic,
     RendezVous,
     RendezVousConfirmation,
@@ -59,7 +60,7 @@ app = FastAPI(
         "Réservez, déplacez ou annulez un rendez-vous chez un professionnel.\n\n"
         "Les routes marquées d'un cadenas demandent la clé admin (bouton **Authorize**)."
     ),
-    version="1.1.0",
+    version="1.2.0",
     lifespan=lifespan,
 )
 
@@ -171,7 +172,10 @@ def verifier_creneau_disponible(debut: datetime, session: Session, ignorer_id: i
         )
 
 
-def verifier_delai_24h(rdv: RendezVous):
+def verifier_delai_24h(rdv: RendezVous, admin: bool = False):
+    """La règle des 24 h protège le salon des annulations de dernière minute : elle ne s'applique pas au salon lui-même."""
+    if admin:
+        return
     if rdv.debut - datetime.now() < DELAI_MODIFICATION:
         raise HTTPException(
             status_code=400,
@@ -203,7 +207,48 @@ def creer_prestation(donnees: PrestationCreate, session: Session = Depends(get_s
 
 @app.get("/prestations", response_model=list[PrestationPublic], tags=["Prestations"])
 def lister_prestations(session: Session = Depends(get_session)):
-    return session.exec(select(Prestation)).all()
+    return session.exec(select(Prestation).order_by(Prestation.id)).all()
+
+
+def trouver_prestation(prestation_id: int, session: Session) -> Prestation:
+    prestation = session.get(Prestation, prestation_id)
+    if prestation is None:
+        raise HTTPException(status_code=404, detail=f"Prestation n°{prestation_id} introuvable.")
+    return prestation
+
+
+@app.patch("/prestations/{prestation_id}", response_model=PrestationPublic, tags=["Prestations"],
+           dependencies=[Depends(verifier_admin)])
+def modifier_prestation(prestation_id: int, donnees: PrestationModification,
+                        session: Session = Depends(get_session)):
+    prestation = trouver_prestation(prestation_id, session)
+    changements = donnees.model_dump(exclude_unset=True)
+    if "nom" in changements and changements["nom"] != prestation.nom:
+        deja = session.exec(select(Prestation).where(Prestation.nom == changements["nom"])).first()
+        if deja:
+            raise HTTPException(status_code=409, detail=f"La prestation « {changements['nom']} » existe déjà.")
+    for champ, valeur in changements.items():
+        setattr(prestation, champ, valeur)
+    session.add(prestation)
+    session.commit()
+    session.refresh(prestation)
+    return prestation
+
+
+@app.delete("/prestations/{prestation_id}", status_code=204, tags=["Prestations"],
+            dependencies=[Depends(verifier_admin)])
+def supprimer_prestation(prestation_id: int, session: Session = Depends(get_session)):
+    prestation = trouver_prestation(prestation_id, session)
+    a_venir = session.exec(
+        select(RendezVous).where(RendezVous.prestation_id == prestation_id, RendezVous.debut >= datetime.now())
+    ).first()
+    if a_venir:
+        raise HTTPException(
+            status_code=409,
+            detail="Des rendez-vous à venir utilisent cette prestation : annulez-les ou attendez qu'ils soient passés.",
+        )
+    session.delete(prestation)
+    session.commit()
 
 
 # ----- Créneaux -----
@@ -224,13 +269,8 @@ def voir_creneaux_libres(jour: date, session: Session = Depends(get_session)):
 
 # ----- Rendez-vous -----
 
-@app.post("/rendez-vous", response_model=RendezVousConfirmation, status_code=201, tags=["Rendez-vous"])
-@limiter.limit(LIMITE_RESERVATION)
-def reserver(request: Request, donnees: RendezVousCreate, session: Session = Depends(get_session)):
-    if donnees.site_web:  # champ piège rempli : c'est un robot
-        raise HTTPException(status_code=400, detail="Demande refusée.")
-    if session.get(Prestation, donnees.prestation_id) is None:
-        raise HTTPException(status_code=404, detail=f"Prestation n°{donnees.prestation_id} introuvable.")
+def enregistrer_rendez_vous(donnees: RendezVousCreate, session: Session) -> RendezVous:
+    trouver_prestation(donnees.prestation_id, session)
     verifier_creneau_disponible(donnees.debut, session)
     rdv = RendezVous.model_validate(donnees.model_dump(exclude={"site_web"}))
     session.add(rdv)
@@ -239,14 +279,33 @@ def reserver(request: Request, donnees: RendezVousCreate, session: Session = Dep
     return rdv
 
 
+@app.post("/rendez-vous", response_model=RendezVousConfirmation, status_code=201, tags=["Rendez-vous"])
+@limiter.limit(LIMITE_RESERVATION)
+def reserver(request: Request, donnees: RendezVousCreate, session: Session = Depends(get_session)):
+    if donnees.site_web:  # champ piège rempli : c'est un robot
+        raise HTTPException(status_code=400, detail="Demande refusée.")
+    return enregistrer_rendez_vous(donnees, session)
+
+
+@app.post("/salon/rendez-vous", response_model=RendezVousConfirmation, status_code=201,
+          tags=["Rendez-vous (salon)"], dependencies=[Depends(verifier_admin)])
+def reserver_pour_un_client(donnees: RendezVousCreate, session: Session = Depends(get_session)):
+    """Rendez-vous pris par le salon (au téléphone, au comptoir) : pas de limite de requêtes."""
+    return enregistrer_rendez_vous(donnees, session)
+
+
 @app.get("/rendez-vous", response_model=list[RendezVousPublic], tags=["Rendez-vous (salon)"],
          dependencies=[Depends(verifier_admin)])
-def lister_rendez_vous(jour: date | None = None, session: Session = Depends(get_session)):
+def lister_rendez_vous(jour: date | None = None, depuis: date | None = None,
+                       session: Session = Depends(get_session)):
+    """`jour` : les rendez-vous d'une journée. `depuis` : tous les rendez-vous à partir d'une date."""
     requete = select(RendezVous).order_by(RendezVous.debut)
     if jour:
         debut_jour = datetime.combine(jour, datetime.min.time())
         requete = requete.where(RendezVous.debut >= debut_jour,
                                 RendezVous.debut < debut_jour + timedelta(days=1))
+    elif depuis:
+        requete = requete.where(RendezVous.debut >= datetime.combine(depuis, datetime.min.time()))
     return session.exec(requete).all()
 
 
@@ -258,8 +317,9 @@ def voir_rendez_vous(rdv: RendezVous = Depends(rendez_vous_autorise)):
 @app.patch("/rendez-vous/{rdv_id}", response_model=RendezVousPublic, tags=["Rendez-vous"])
 def deplacer_rendez_vous(donnees: RendezVousDeplacement,
                          rdv: RendezVous = Depends(rendez_vous_autorise),
-                         session: Session = Depends(get_session)):
-    verifier_delai_24h(rdv)
+                         session: Session = Depends(get_session),
+                         cle_api: str | None = Security(entete_cle_api)):
+    verifier_delai_24h(rdv, admin=est_admin(cle_api))
     verifier_creneau_disponible(donnees.debut, session, ignorer_id=rdv.id)
     rdv.debut = donnees.debut
     session.add(rdv)
@@ -270,7 +330,8 @@ def deplacer_rendez_vous(donnees: RendezVousDeplacement,
 
 @app.delete("/rendez-vous/{rdv_id}", status_code=204, tags=["Rendez-vous"])
 def annuler_rendez_vous(rdv: RendezVous = Depends(rendez_vous_autorise),
-                        session: Session = Depends(get_session)):
-    verifier_delai_24h(rdv)
+                        session: Session = Depends(get_session),
+                        cle_api: str | None = Security(entete_cle_api)):
+    verifier_delai_24h(rdv, admin=est_admin(cle_api))
     session.delete(rdv)
     session.commit()
