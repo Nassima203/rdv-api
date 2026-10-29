@@ -2,13 +2,21 @@
 L'API FastAPI de prise de rendez-vous.
 Lancer le serveur :  uvicorn app.main:app --reload
 Documentation      :  http://127.0.0.1:8000/docs
+
+Qui peut faire quoi ?
+- Tout le monde : voir les prestations, voir les créneaux libres, réserver.
+- Le client (avec le jeton reçu à la réservation) : voir, déplacer, annuler SON rendez-vous.
+- Le salon (avec la clé admin X-API-Key) : tout, y compris la liste des rendez-vous.
 """
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from sqlmodel import Session, select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -19,9 +27,21 @@ from app.models import (
     PrestationCreate,
     PrestationPublic,
     RendezVous,
+    RendezVousConfirmation,
     RendezVousCreate,
     RendezVousDeplacement,
     RendezVousPublic,
+)
+from app.securite import (
+    ENTETES_SECURITE,
+    LIMITE_RESERVATION,
+    ORIGINES_AUTORISEES,
+    entete_cle_api,
+    est_admin,
+    jeton_valide,
+    limiter,
+    lire_jeton,
+    verifier_admin,
 )
 
 DELAI_MODIFICATION = timedelta(hours=24)
@@ -35,10 +55,36 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="API de prise de rendez-vous",
-    description="Réservez, déplacez ou annulez un rendez-vous chez un professionnel.",
-    version="1.0.0",
+    description=(
+        "Réservez, déplacez ou annulez un rendez-vous chez un professionnel.\n\n"
+        "Les routes marquées d'un cadenas demandent la clé admin (bouton **Authorize**)."
+    ),
+    version="1.1.0",
     lifespan=lifespan,
 )
+
+
+# ======================= Protections globales =======================
+
+# Limite de requêtes par adresse IP
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+
+# Seul le site du salon peut appeler l'API depuis un navigateur
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ORIGINES_AUTORISEES,
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_headers=["Content-Type", "X-Jeton", "X-API-Key"],
+)
+
+
+@app.middleware("http")
+async def ajouter_entetes_securite(request: Request, call_next):
+    reponse = await call_next(request)
+    for nom, valeur in ENTETES_SECURITE.items():
+        reponse.headers.setdefault(nom, valeur)
+    return reponse
 
 
 # ======================= Gestion des erreurs =======================
@@ -48,6 +94,14 @@ async def gerer_erreur_http(request: Request, exc: StarletteHTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content={"erreur": exc.detail, "code": exc.status_code},
+    )
+
+
+@app.exception_handler(RateLimitExceeded)
+async def gerer_trop_de_requetes(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"erreur": "Trop de demandes depuis votre connexion. Réessayez un peu plus tard.", "code": 429},
     )
 
 
@@ -91,9 +145,18 @@ async def gerer_erreur_validation(request: Request, exc: RequestValidationError)
 
 # ======================= Fonctions utilitaires =======================
 
-def trouver_rendez_vous(rdv_id: int, session: Session) -> RendezVous:
+def rendez_vous_autorise(
+    rdv_id: int,
+    session: Session = Depends(get_session),
+    jeton: str | None = Depends(lire_jeton),
+    cle_api: str | None = Security(entete_cle_api),
+) -> RendezVous:
+    """
+    Donne accès au rendez-vous seulement au client qui a le bon jeton, ou au salon.
+    Même message d'erreur (404) qu'il existe ou non : on ne révèle pas quels numéros sont pris.
+    """
     rdv = session.get(RendezVous, rdv_id)
-    if rdv is None:
+    if rdv is None or not (est_admin(cle_api) or jeton_valide(rdv.jeton, jeton)):
         raise HTTPException(status_code=404, detail=f"Rendez-vous n°{rdv_id} introuvable.")
     return rdv
 
@@ -125,7 +188,8 @@ def accueil():
 
 # ----- Prestations -----
 
-@app.post("/prestations", response_model=PrestationPublic, status_code=201, tags=["Prestations"])
+@app.post("/prestations", response_model=PrestationPublic, status_code=201, tags=["Prestations"],
+          dependencies=[Depends(verifier_admin)])
 def creer_prestation(donnees: PrestationCreate, session: Session = Depends(get_session)):
     deja = session.exec(select(Prestation).where(Prestation.nom == donnees.nom)).first()
     if deja:
@@ -160,19 +224,23 @@ def voir_creneaux_libres(jour: date, session: Session = Depends(get_session)):
 
 # ----- Rendez-vous -----
 
-@app.post("/rendez-vous", response_model=RendezVousPublic, status_code=201, tags=["Rendez-vous"])
-def reserver(donnees: RendezVousCreate, session: Session = Depends(get_session)):
+@app.post("/rendez-vous", response_model=RendezVousConfirmation, status_code=201, tags=["Rendez-vous"])
+@limiter.limit(LIMITE_RESERVATION)
+def reserver(request: Request, donnees: RendezVousCreate, session: Session = Depends(get_session)):
+    if donnees.site_web:  # champ piège rempli : c'est un robot
+        raise HTTPException(status_code=400, detail="Demande refusée.")
     if session.get(Prestation, donnees.prestation_id) is None:
         raise HTTPException(status_code=404, detail=f"Prestation n°{donnees.prestation_id} introuvable.")
     verifier_creneau_disponible(donnees.debut, session)
-    rdv = RendezVous.model_validate(donnees)
+    rdv = RendezVous.model_validate(donnees.model_dump(exclude={"site_web"}))
     session.add(rdv)
     session.commit()
     session.refresh(rdv)
     return rdv
 
 
-@app.get("/rendez-vous", response_model=list[RendezVousPublic], tags=["Rendez-vous"])
+@app.get("/rendez-vous", response_model=list[RendezVousPublic], tags=["Rendez-vous (salon)"],
+         dependencies=[Depends(verifier_admin)])
 def lister_rendez_vous(jour: date | None = None, session: Session = Depends(get_session)):
     requete = select(RendezVous).order_by(RendezVous.debut)
     if jour:
@@ -183,14 +251,14 @@ def lister_rendez_vous(jour: date | None = None, session: Session = Depends(get_
 
 
 @app.get("/rendez-vous/{rdv_id}", response_model=RendezVousPublic, tags=["Rendez-vous"])
-def voir_rendez_vous(rdv_id: int, session: Session = Depends(get_session)):
-    return trouver_rendez_vous(rdv_id, session)
+def voir_rendez_vous(rdv: RendezVous = Depends(rendez_vous_autorise)):
+    return rdv
 
 
 @app.patch("/rendez-vous/{rdv_id}", response_model=RendezVousPublic, tags=["Rendez-vous"])
-def deplacer_rendez_vous(rdv_id: int, donnees: RendezVousDeplacement,
+def deplacer_rendez_vous(donnees: RendezVousDeplacement,
+                         rdv: RendezVous = Depends(rendez_vous_autorise),
                          session: Session = Depends(get_session)):
-    rdv = trouver_rendez_vous(rdv_id, session)
     verifier_delai_24h(rdv)
     verifier_creneau_disponible(donnees.debut, session, ignorer_id=rdv.id)
     rdv.debut = donnees.debut
@@ -201,8 +269,8 @@ def deplacer_rendez_vous(rdv_id: int, donnees: RendezVousDeplacement,
 
 
 @app.delete("/rendez-vous/{rdv_id}", status_code=204, tags=["Rendez-vous"])
-def annuler_rendez_vous(rdv_id: int, session: Session = Depends(get_session)):
-    rdv = trouver_rendez_vous(rdv_id, session)
+def annuler_rendez_vous(rdv: RendezVous = Depends(rendez_vous_autorise),
+                        session: Session = Depends(get_session)):
     verifier_delai_24h(rdv)
     session.delete(rdv)
     session.commit()

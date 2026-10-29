@@ -1,0 +1,24 @@
+# Déploiement sur Render en un clic (New > Blueprint > ce dépôt).
+services:
+  - type: web
+    name: rdv-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # --proxy-headers : Render passe par un proxy, on lit la vraie IP du visiteur
+    # (indispensable pour que la limite de requêtes s'applique par personne, pas à tout le monde)
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*'
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: TZ
+        value: Europe/Paris
+      - key: ADMIN_API_KEY
+        generateValue: true   # Render génère une clé secrète aléatoire
+      - key: ALLOWED_ORIGINS
+        value: https://maison-lumen-c4b75a.webflow.io
+      - key: LIMITE_RESERVATION
+        value: 5/hour
+      - key: JOURS_RESERVABLES
+        value: "60"
