@@ -48,9 +48,7 @@ def client_fixture(session, monkeypatch, envoyes):
         yield session
 
     app.dependency_overrides[get_session] = get_session_test
-    # Le site envoie sa clé publique à chaque appel : on fait pareil dans les tests
-    cle_site = TestClient(app).post("/cles", json={"nom": "Site de test", "type": "publique"}, headers=ADMIN).json()["cle"]
-    yield TestClient(app, headers={"X-Cle-Site": cle_site})
+    yield TestClient(app)
     app.dependency_overrides.clear()
     limiter.enabled = True
 
@@ -433,75 +431,6 @@ def test_adresse_postgres_de_render_convertie(monkeypatch):
     monkeypatch.delenv("DATABASE_URL")
     assert adresse_base() == "sqlite:///rdv.db"
 
-
-
-# ---------- Clés d'accès APTX ----------
-
-def test_401_sans_cle_du_site(client):
-    nu = TestClient(app)  # pas de clé publique
-    rep = nu.get("/prestations")
-    assert rep.status_code == 401
-    assert "Clé du site" in rep.json()["erreur"]
-    assert nu.get("/creneaux", params={"jour": prochain_jour_ouvre().isoformat()}).status_code == 401
-
-
-def test_une_cle_secrete_ne_remplace_pas_la_cle_du_site_et_inversement(client):
-    secrete = client.post("/cles", json={"nom": "Admin", "type": "secrete"}, headers=ADMIN).json()["cle"]
-    publique = client.post("/cles", json={"nom": "Site 2", "type": "publique"}, headers=ADMIN).json()["cle"]
-    nu = TestClient(app)
-    # la clé publique dans l'en-tête admin ne donne aucun droit
-    assert nu.get("/rendez-vous", headers={"X-API-Key": publique}).status_code == 401
-    # la clé secrète mise à la place de la clé du site ne marche pas non plus
-    assert nu.get("/prestations", headers={"X-Cle-Site": secrete}).status_code == 401
-    # mais l'espace salon peut lire les routes du site avec sa clé secrète
-    assert nu.get("/prestations", headers={"X-API-Key": secrete}).status_code == 200
-
-
-def test_creer_une_cle_aptx(client):
-    rep = client.post("/cles", json={"nom": "Site Webflow", "type": "publique"}, headers=ADMIN)
-    assert rep.status_code == 201
-    cle = rep.json()["cle"]
-    assert cle.startswith("APTX_pk_") and len(cle) > 30
-    secrete = client.post("/cles", json={"nom": "Ordinateur du salon", "type": "secrete"}, headers=ADMIN).json()["cle"]
-    assert secrete.startswith("APTX_sk_")
-
-
-def test_la_cle_complete_n_est_jamais_relue(client, session):
-    cle = client.post("/cles", json={"nom": "Admin", "type": "secrete"}, headers=ADMIN).json()["cle"]
-    liste = client.get("/cles", headers=ADMIN).json()
-    assert all("cle" not in c for c in liste)
-    assert cle not in str(liste)
-    # la base ne garde qu'une empreinte
-    from app.models import CleApi
-    from sqlmodel import select
-    assert all(c.empreinte != cle and len(c.empreinte) == 64 for c in session.exec(select(CleApi)).all())
-
-
-def test_une_cle_secrete_creee_donne_acces_au_salon(client):
-    secrete = client.post("/cles", json={"nom": "Admin", "type": "secrete"}, headers=ADMIN).json()["cle"]
-    assert client.get("/rendez-vous", headers={"X-API-Key": secrete}).status_code == 200
-
-
-def test_revoquer_une_cle(client):
-    cree = client.post("/cles", json={"nom": "Ancienne", "type": "secrete"}, headers=ADMIN).json()
-    assert client.delete(f"/cles/{cree['id']}", headers=ADMIN).json()["revoquee_le"] is not None
-    assert client.get("/rendez-vous", headers={"X-API-Key": cree["cle"]}).status_code == 401
-
-
-def test_impossible_de_revoquer_sa_propre_cle(client):
-    cree = client.post("/cles", json={"nom": "Moi", "type": "secrete"}, headers=ADMIN).json()
-    rep = client.delete(f"/cles/{cree['id']}", headers={"X-API-Key": cree["cle"]})
-    assert rep.status_code == 409
-
-
-def test_gerer_les_cles_demande_une_cle_secrete(client):
-    assert client.get("/cles").status_code == 401
-    assert client.post("/cles", json={"nom": "Pirate", "type": "secrete"}).status_code == 401
-
-
-def test_422_type_de_cle_invalide(client):
-    rep = client.post("/cles", json={"nom": "X", "type": "magique"}, headers=ADMIN)
-    assert rep.status_code == 422
 
 
 # ---------- Annulation par le salon : motif ----------

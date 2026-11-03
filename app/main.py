@@ -4,9 +4,9 @@ Lancer le serveur :  uvicorn app.main:app --reload
 Documentation      :  http://127.0.0.1:8000/docs
 
 Qui peut faire quoi ?
-- Le site (avec sa clé publique APTX_pk_ dans X-Cle-Site) : voir les prestations et les créneaux, réserver.
+- Tout le monde : voir les prestations, voir les créneaux libres, réserver.
 - Le client (avec le jeton reçu à la réservation) : voir, déplacer, annuler SON rendez-vous.
-- Le salon (avec une clé secrète APTX_sk_ dans X-API-Key) : tout, y compris les clés d'accès.
+- Le salon (avec la clé admin X-API-Key) : tout, y compris la liste des rendez-vous.
 """
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
@@ -25,13 +25,9 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.creneaux import creneaux_libres, est_jour_ouvre
 from app import emails
-from app.cles import empreinte, est_admin, generer_cle, verifier_admin, verifier_cle_site
+from app.cles import est_admin, verifier_admin
 from app.database import DATABASE_URL, creer_tables, get_session
 from app.models import (
-    CleApi,
-    CleApiCreate,
-    CleApiCreee,
-    CleApiPublic,
     Prestation,
     PrestationCreate,
     PrestationModification,
@@ -65,8 +61,7 @@ app = FastAPI(
     title="API de prise de rendez-vous",
     description=(
         "Réservez, déplacez ou annulez un rendez-vous chez un professionnel.\n\n"
-        "Les routes du site demandent la clé publique du site (en-tête `X-Cle-Site`, APTX_pk_...). "
-        "Les routes marquées d'un cadenas demandent une clé secrète du salon (bouton **Authorize**, APTX_sk_...)."
+        "Les routes marquées d'un cadenas demandent la clé admin du salon (bouton **Authorize**)."
     ),
     version="2.0.0",
     lifespan=lifespan,
@@ -84,7 +79,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ORIGINES_AUTORISEES,
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
-    allow_headers=["Content-Type", "X-Jeton", "X-API-Key", "X-Cle-Site"],
+    allow_headers=["Content-Type", "X-Jeton", "X-API-Key"],
 )
 
 
@@ -165,7 +160,7 @@ def rendez_vous_autorise(
     Même message d'erreur (404) qu'il existe ou non : on ne révèle pas quels numéros sont pris.
     """
     rdv = session.get(RendezVous, rdv_id)
-    if rdv is None or not (est_admin(cle_api, session) or jeton_valide(rdv.jeton, jeton)):
+    if rdv is None or not (est_admin(cle_api) or jeton_valide(rdv.jeton, jeton)):
         raise HTTPException(status_code=404, detail=f"Rendez-vous n°{rdv_id} introuvable.")
     return rdv
 
@@ -217,8 +212,7 @@ def creer_prestation(donnees: PrestationCreate, session: Session = Depends(get_s
     return prestation
 
 
-@app.get("/prestations", response_model=list[PrestationPublic], tags=["Prestations"],
-         dependencies=[Depends(verifier_cle_site)])
+@app.get("/prestations", response_model=list[PrestationPublic], tags=["Prestations"])
 def lister_prestations(session: Session = Depends(get_session)):
     return session.exec(select(Prestation).order_by(Prestation.id)).all()
 
@@ -266,7 +260,7 @@ def supprimer_prestation(prestation_id: int, session: Session = Depends(get_sess
 
 # ----- Créneaux -----
 
-@app.get("/creneaux", tags=["Créneaux"], dependencies=[Depends(verifier_cle_site)])
+@app.get("/creneaux", tags=["Créneaux"])
 def voir_creneaux_libres(jour: date, session: Session = Depends(get_session)):
     if not est_jour_ouvre(jour):
         return {"jour": jour, "message": "Le cabinet est fermé ce jour-là.", "creneaux": []}
@@ -299,8 +293,7 @@ def enregistrer_rendez_vous(donnees: RendezVousCreate, session: Session, taches:
     return rdv
 
 
-@app.post("/rendez-vous", response_model=RendezVousConfirmation, status_code=201, tags=["Rendez-vous"],
-          dependencies=[Depends(verifier_cle_site)])
+@app.post("/rendez-vous", response_model=RendezVousConfirmation, status_code=201, tags=["Rendez-vous"])
 @limiter.limit(LIMITE_RESERVATION)
 def reserver(request: Request, donnees: RendezVousCreate, taches: BackgroundTasks,
              session: Session = Depends(get_session)):
@@ -332,14 +325,12 @@ def lister_rendez_vous(jour: date | None = None, depuis: date | None = None,
     return session.exec(requete).all()
 
 
-@app.get("/rendez-vous/{rdv_id}", response_model=RendezVousPublic, tags=["Rendez-vous"],
-         dependencies=[Depends(verifier_cle_site)])
+@app.get("/rendez-vous/{rdv_id}", response_model=RendezVousPublic, tags=["Rendez-vous"])
 def voir_rendez_vous(rdv: RendezVous = Depends(rendez_vous_autorise)):
     return rdv
 
 
-@app.patch("/rendez-vous/{rdv_id}", response_model=RendezVousPublic, tags=["Rendez-vous"],
-           dependencies=[Depends(verifier_cle_site)])
+@app.patch("/rendez-vous/{rdv_id}", response_model=RendezVousPublic, tags=["Rendez-vous"])
 def deplacer_rendez_vous(donnees: RendezVousDeplacement, taches: BackgroundTasks,
                          rdv: RendezVous = Depends(rendez_vous_autorise),
                          session: Session = Depends(get_session)):
@@ -370,8 +361,7 @@ MOTIFS = {
 }
 
 
-@app.delete("/rendez-vous/{rdv_id}", status_code=204, tags=["Rendez-vous"],
-            dependencies=[Depends(verifier_cle_site)])
+@app.delete("/rendez-vous/{rdv_id}", status_code=204, tags=["Rendez-vous"])
 def annuler_rendez_vous(taches: BackgroundTasks,
                         rdv: RendezVous = Depends(rendez_vous_autorise),
                         session: Session = Depends(get_session),
@@ -382,7 +372,7 @@ def annuler_rendez_vous(taches: BackgroundTasks,
     Mêmes critères pour le client et le salon : pas un rendez-vous passé, et au moins 24 h avant.
     Le salon doit en plus donner un motif, repris dans l'email envoyé au client.
     """
-    par_le_salon = est_admin(cle_api, session)
+    par_le_salon = est_admin(cle_api)
     if par_le_salon and motif is None:
         raise HTTPException(status_code=422, detail="Indiquez le motif de l'annulation.")
     verifier_criteres_modification(rdv)
@@ -396,44 +386,9 @@ def annuler_rendez_vous(taches: BackgroundTasks,
     taches.add_task(emails.envoyer, message)
 
 
-# ----- Clés d'accès APTX (salon) -----
+# ----- État du service (salon) -----
 
-@app.get("/cles", response_model=list[CleApiPublic], tags=["Clés d'accès (salon)"],
-         dependencies=[Depends(verifier_admin)])
-def lister_cles(session: Session = Depends(get_session)):
-    return session.exec(select(CleApi).order_by(CleApi.id)).all()
-
-
-@app.post("/cles", response_model=CleApiCreee, status_code=201, tags=["Clés d'accès (salon)"],
-          dependencies=[Depends(verifier_admin)])
-def creer_cle(donnees: CleApiCreate, session: Session = Depends(get_session)):
-    """La clé complète n'est renvoyée qu'ici, une seule fois : la base n'en garde qu'une empreinte."""
-    cle = generer_cle(donnees.type)
-    enregistree = CleApi(nom=donnees.nom, type=donnees.type, apercu=cle[:12] + "…", empreinte=empreinte(cle))
-    session.add(enregistree)
-    session.commit()
-    session.refresh(enregistree)
-    return CleApiCreee(**enregistree.model_dump(), cle=cle)
-
-
-@app.delete("/cles/{cle_id}", response_model=CleApiPublic, tags=["Clés d'accès (salon)"],
-            dependencies=[Depends(verifier_admin)])
-def revoquer_cle(cle_id: int, session: Session = Depends(get_session),
-                 cle_api: str | None = Security(entete_cle_api)):
-    cle = session.get(CleApi, cle_id)
-    if cle is None:
-        raise HTTPException(status_code=404, detail=f"Clé n°{cle_id} introuvable.")
-    if cle_api and cle.empreinte == empreinte(cle_api):
-        raise HTTPException(status_code=409, detail="Vous ne pouvez pas révoquer la clé avec laquelle vous êtes connecté.")
-    if cle.revoquee_le is None:
-        cle.revoquee_le = datetime.now()
-        session.add(cle)
-        session.commit()
-        session.refresh(cle)
-    return cle
-
-
-@app.get("/salon/etat", tags=["Clés d'accès (salon)"], dependencies=[Depends(verifier_admin)])
+@app.get("/salon/etat", tags=["Rendez-vous (salon)"], dependencies=[Depends(verifier_admin)])
 def etat_du_service():
     """Pour l'espace salon : savoir si les emails et la base de données sont bien configurés."""
     return {

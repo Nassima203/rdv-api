@@ -1,8 +1,7 @@
 """
 Tout ce qui protège l'API une fois en ligne.
 
-- Les routes ADMIN demandent une clé secrète APTX_sk_ dans l'en-tête X-API-Key (voir app/cles.py).
-- Les routes du site demandent la clé publique APTX_pk_ dans l'en-tête X-Cle-Site.
+- Les routes ADMIN demandent la clé admin du salon dans l'en-tête X-API-Key (voir app/cles.py).
 - Chaque rendez-vous reçoit un JETON aléatoire à sa création. Sans ce jeton (ou la clé
   admin), impossible de voir, déplacer ou annuler le rendez-vous de quelqu'un d'autre.
 - Une LIMITE DE REQUÊTES par adresse IP empêche un robot de réserver tout le planning.
@@ -43,13 +42,13 @@ JOURS_RESERVABLES = int(os.environ.get("JOURS_RESERVABLES", "60"))
 limiter = Limiter(key_func=get_remote_address, default_limits=[LIMITE_PAR_DEFAUT])
 
 
-# ---------- En-tête de la clé secrète du salon ----------
-# (la vérification elle-même est dans app/cles.py, car elle a besoin de la base)
+# ---------- En-tête de la clé admin du salon ----------
+# (la vérification elle-même est dans app/cles.py)
 
 entete_cle_api = APIKeyHeader(
     name="X-API-Key",
     auto_error=False,
-    description="Clé secrète du salon (APTX_sk_...), ou la clé de secours ADMIN_API_KEY.",
+    description="Clé admin du salon (variable d'environnement ADMIN_API_KEY).",
 )
 
 

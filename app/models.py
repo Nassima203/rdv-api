@@ -5,7 +5,7 @@ Les modèles de données et leurs règles de VALIDATION.
 """
 import re
 from datetime import datetime, timedelta
-from typing import Literal, Optional
+from typing import Optional
 
 from pydantic import EmailStr, NaiveDatetime, field_validator
 from sqlmodel import Field, SQLModel
@@ -115,41 +115,3 @@ class RendezVousPublic(RendezVousBase):
 class RendezVousConfirmation(RendezVousPublic):
     """Renvoyé UNE seule fois, à la réservation : c'est la seule fois où le jeton est visible."""
     jeton: str
-
-# ---------- Clés d'accès APTX ----------
-# Deux sortes de clés, comme chez Stripe :
-# - "publique" (APTX_pk_...) : mise dans le code du site, elle identifie le site. Elle n'ouvre
-#   que ce qu'un client peut déjà faire (voir les créneaux, réserver).
-# - "secrete"  (APTX_sk_...) : tapée par l'admin sur la page /admin, jamais dans le code du site.
-# La clé complète n'est montrée qu'une fois, à sa création : la base n'en garde qu'une empreinte.
-
-class CleApiCreate(SQLModel):
-    nom: str = Field(min_length=2, max_length=60)
-    type: Literal["publique", "secrete"]
-
-
-class CleApi(SQLModel, table=True):
-    __tablename__ = "cle_api"
-    id: Optional[int] = Field(default=None, primary_key=True)
-    nom: str = Field(max_length=60)
-    type: str = Field(max_length=10)
-    apercu: str = Field(max_length=20)              # ex. "APTX_pk_3fQ9…" pour la reconnaître
-    empreinte: str = Field(max_length=64, unique=True, index=True)  # SHA-256 de la clé
-    cree_le: NaiveDatetime = Field(default_factory=datetime.now)
-    derniere_utilisation: Optional[NaiveDatetime] = None
-    revoquee_le: Optional[NaiveDatetime] = None
-
-
-class CleApiPublic(SQLModel):
-    id: int
-    nom: str
-    type: str
-    apercu: str
-    cree_le: NaiveDatetime
-    derniere_utilisation: Optional[NaiveDatetime]
-    revoquee_le: Optional[NaiveDatetime]
-
-
-class CleApiCreee(CleApiPublic):
-    """Renvoyée UNE seule fois, à la création : c'est la seule fois où la clé complète est visible."""
-    cle: str

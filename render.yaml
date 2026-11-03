@@ -15,7 +15,7 @@ services:
       - key: TZ
         value: Europe/Paris
       - key: ADMIN_API_KEY
-        generateValue: true   # clé de secours du salon : sert à se connecter la première fois à /admin
+        generateValue: true   # clé admin : à remplacer par la vôtre dans Environment (écran de connexion /admin)
       - key: DATABASE_URL     # base PostgreSQL (Neon) : à coller dans Environment
         sync: false
       - key: MAIL_RELAY_URL   # relais Gmail (docs/relais-email.gs) : à coller dans Environment

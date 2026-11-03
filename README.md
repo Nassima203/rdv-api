@@ -162,18 +162,12 @@ Une page d'administration est intégrée au site Webflow ([/admin](https://maiso
 
 L'API est appelée par un site public ([Maison Lumen](https://maison-lumen-c4b75a.webflow.io), sur Webflow). Tout ce qui est dans le site est visible par n'importe qui : la sécurité se fait **dans l'API**.
 
-### Les clés APTX
+### La clé admin
 
-| Clé | Format | Où elle vit | Ce qu'elle permet |
-|---|---|---|---|
-| Publique du site | `APTX_pk_…` | Dans le code du site Webflow (en-tête `X-Cle-Site`) | Voir les prestations et les créneaux, réserver. Rien d'autre. |
-| Secrète du salon | `APTX_sk_…` | Tapée par l'admin sur `/admin` (en-tête `X-API-Key`), jamais dans le site | Tout : planning, annulations, prestations, clés. |
-| Clé de secours | libre | Variable `ADMIN_API_KEY` sur Render | Comme une clé secrète. Sert à la première connexion. |
-
-- Les clés sont créées et révoquées depuis l'espace salon (`POST /cles`, `DELETE /cles/{id}`).
-- La clé complète n'est montrée **qu'une fois**, à sa création : la base n'en garde qu'une **empreinte SHA-256**.
-- Une clé publique ne donne aucun droit d'administration, et une clé secrète ne remplace pas la clé du site.
-- On ne peut pas révoquer la clé avec laquelle on est connecté.
+- Les routes du salon (planning, annulations, prestations) demandent la **clé admin** dans l'en-tête `X-API-Key`.
+- Sa valeur est choisie par le salon dans la variable `ADMIN_API_KEY` sur Render : elle n'est jamais dans le code, ni sur GitHub, ni dans le site.
+- L'admin la tape sur l'écran de connexion de l'espace salon (`/admin`). Elle n'est gardée que le temps de l'onglet.
+- Sans clé configurée, les routes du salon sont fermées à tout le monde.
 
 ### Les autres protections
 
@@ -186,7 +180,7 @@ L'API est appelée par un site public ([Maison Lumen](https://maison-lumen-c4b75
 - **Validation Pydantic** et requêtes SQLModel paramétrées (pas d'injection SQL).
 - Deux réservations au même créneau à la même seconde : la contrainte d'unicité de la base garde la première (409).
 
-Tout est vérifié par les tests : `python -m pytest -v` (**56 tests**).
+Tout est vérifié par les tests : `python -m pytest -v` (**47 tests**).
 
 * * *
 
@@ -207,7 +201,7 @@ rdv_api/
 │   ├── database.py   → connexion à la base de données
 │   ├── models.py     → données et règles de validation
 │   ├── securite.py   → jetons, limite de requêtes, CORS
-│   ├── cles.py       → clés d'accès APTX (publiques et secrètes)
+│   ├── cles.py       → vérification de la clé admin
 │   ├── emails.py     → emails de confirmation, déplacement, annulation
 │   └── main.py       → routes de l'API et gestion des erreurs
 ├── tests/
