@@ -1,0 +1,563 @@
+<div id="mla" class="mla">
+  <!-- Connexion -->
+  <section id="mla-login" class="mla-login">
+    <p class="mla-logo">MAISON LUMEN</p>
+    <h1 class="mla-login-title">Espace salon</h1>
+    <form id="mla-login-form" class="mla-login-form">
+      <label class="mla-label">Clé admin
+        <input id="mla-cle" class="mla-input" type="password" autocomplete="current-password" required>
+      </label>
+      <button class="mla-btn mla-btn-dark" type="submit">Se connecter</button>
+      <p id="mla-login-msg" class="mla-msg" role="alert"></p>
+    </form>
+    <p class="mla-hint">La clé reste dans cet onglet et s'efface à sa fermeture.</p>
+  </section>
+
+  <!-- Application -->
+  <section id="mla-app" class="mla-app" hidden>
+    <header class="mla-top">
+      <p class="mla-logo mla-logo-small">MAISON LUMEN <span>Espace salon</span></p>
+      <nav class="mla-tabs" role="tablist">
+        <button class="mla-tab is-active" data-vue="planning" type="button">Planning</button>
+        <button class="mla-tab" data-vue="avenir" type="button">À venir</button>
+        <button class="mla-tab" data-vue="nouveau" type="button">Nouveau rendez-vous</button>
+        <button class="mla-tab" data-vue="prestations" type="button">Prestations</button>
+      </nav>
+      <button id="mla-logout" class="mla-link" type="button">Se déconnecter</button>
+    </header>
+
+    <div id="mla-toast" class="mla-toast" role="status" hidden></div>
+
+    <!-- Planning du jour -->
+    <div class="mla-vue" data-vue="planning">
+      <div class="mla-daybar">
+        <button class="mla-icon" id="mla-prev" type="button" aria-label="Jour précédent">‹</button>
+        <input id="mla-jour" class="mla-input mla-date" type="date">
+        <button class="mla-icon" id="mla-next" type="button" aria-label="Jour suivant">›</button>
+        <button class="mla-btn mla-btn-light mla-btn-small" id="mla-today" type="button">Aujourd'hui</button>
+      </div>
+      <p id="mla-day-title" class="mla-day-title"></p>
+      <div class="mla-stats">
+        <div class="mla-stat"><span id="mla-stat-nb">0</span><small>rendez-vous</small></div>
+        <div class="mla-stat"><span id="mla-stat-libres">0</span><small>créneaux libres</small></div>
+        <div class="mla-stat"><span id="mla-stat-ca">0 €</span><small>chiffre prévu</small></div>
+      </div>
+      <div id="mla-planning" class="mla-planning"></div>
+    </div>
+
+    <!-- Rendez-vous à venir -->
+    <div class="mla-vue" data-vue="avenir" hidden>
+      <div class="mla-head-row">
+        <h2 class="mla-h2">Rendez-vous à venir</h2>
+        <input id="mla-recherche" class="mla-input mla-search" type="search" placeholder="Rechercher un client…">
+      </div>
+      <div id="mla-avenir" class="mla-avenir"></div>
+    </div>
+
+    <!-- Nouveau rendez-vous -->
+    <div class="mla-vue" data-vue="nouveau" hidden>
+      <h2 class="mla-h2">Nouveau rendez-vous</h2>
+      <p class="mla-sub">Pour un client qui appelle ou passe au salon.</p>
+      <form id="mla-new" class="mla-card mla-form-grid">
+        <label class="mla-label">Prestation<select id="mla-new-prestation" class="mla-input" required></select></label>
+        <label class="mla-label">Jour<input id="mla-new-jour" class="mla-input" type="date" required></label>
+        <label class="mla-label">Créneau<select id="mla-new-heure" class="mla-input" required><option value="">Choisissez un jour</option></select></label>
+        <label class="mla-label">Nom et prénom<input name="client_nom" class="mla-input" type="text" required></label>
+        <label class="mla-label">Email<input name="client_email" class="mla-input" type="email" required></label>
+        <label class="mla-label">Téléphone<input name="client_telephone" class="mla-input" type="tel" placeholder="06 12 34 56 78" required></label>
+        <div class="mla-form-foot">
+          <button class="mla-btn mla-btn-dark" type="submit">Enregistrer le rendez-vous</button>
+          <div id="mla-new-msg" class="mla-msg"></div>
+        </div>
+      </form>
+    </div>
+
+    <!-- Prestations -->
+    <div class="mla-vue" data-vue="prestations" hidden>
+      <h2 class="mla-h2">Prestations</h2>
+      <p class="mla-sub">Ce que les clients voient sur le site au moment de réserver.</p>
+      <div id="mla-etat" class="mla-etat"></div>
+      <div id="mla-prestations" class="mla-prestations"></div>
+      <form id="mla-presta-new" class="mla-card mla-presta-row mla-presta-add">
+        <input name="nom" class="mla-input" placeholder="Nouvelle prestation" required>
+        <input name="prix" class="mla-input" type="number" min="1" max="1000" step="0.5" placeholder="Prix €" required>
+        <input name="description" class="mla-input" placeholder="Description (facultatif)">
+        <button class="mla-btn mla-btn-dark mla-btn-small" type="submit">Ajouter</button>
+      </form>
+    </div>
+  </section>
+</div>
+
+<style>
+  .mla { font-family: Arial, sans-serif; color: #2a1d14; background: #f5f1ec; min-height: 100vh; }
+  .mla *, .mla *::before, .mla *::after { box-sizing: border-box; }
+  .mla [hidden] { display: none !important; }
+  .mla-logo { font-family: Georgia, "Times New Roman", serif; letter-spacing: 6px; font-size: 18px; margin: 0; }
+  .mla-logo span { font-family: Arial, sans-serif; letter-spacing: 0; font-size: 13px; color: #8a8178; margin-left: 10px; }
+  .mla-login { max-width: 420px; margin: 0 auto; padding: 120px 20px 60px; text-align: center; }
+  .mla-login-title { font-weight: 300; font-size: 34px; margin: 14px 0 32px; }
+  .mla-login-form { background: #fff; border: 1px solid #ece7e1; border-radius: 22px; padding: 28px; text-align: left; display: grid; gap: 16px; }
+  .mla-hint { font-size: 12px; color: #8a8178; margin-top: 14px; }
+  .mla-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #5b524a; }
+  .mla-input { font: inherit; font-size: 15px; color: #2a1d14; padding: 11px 13px; border: 1px solid #d9d2ca; border-radius: 12px; background: #fff; width: 100%; }
+  .mla-input:focus { outline: none; border-color: #2a1d14; }
+  .mla-btn { font: inherit; font-size: 14px; cursor: pointer; padding: 12px 26px; border-radius: 999px; border: 1px solid #2a1d14; }
+  .mla-btn:disabled { opacity: .45; cursor: wait; }
+  .mla-btn-dark { background: #2a1d14; color: #fff; }
+  .mla-btn-light { background: #fff; color: #2a1d14; }
+  .mla-btn-small { padding: 8px 16px; font-size: 13px; }
+  .mla-btn-danger { background: #fff; color: #b3402e; border-color: #e3b8ad; }
+  .mla-btn-danger-full { background: #b3402e; color: #fff; border-color: #b3402e; }
+  .mla-link { font: inherit; font-size: 13px; background: none; border: 0; color: #5b524a; text-decoration: underline; cursor: pointer; }
+  .mla-msg { font-size: 14px; color: #b3402e; margin: 0; }
+  .mla-msg.is-ok { color: #3f6b3a; }
+  .mla-app { max-width: 1100px; margin: 0 auto; padding: 0 24px 60px; }
+  .mla-top { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; padding: 22px 0; border-bottom: 1px solid #e2dbd2; margin-bottom: 28px; }
+  .mla-logo-small { font-size: 15px; letter-spacing: 4px; margin-right: auto; }
+  .mla-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .mla-tab { font: inherit; font-size: 14px; cursor: pointer; padding: 9px 16px; border-radius: 999px; border: 1px solid transparent; background: none; color: #5b524a; }
+  .mla-tab.is-active { background: #2a1d14; color: #fff; }
+  .mla-toast { position: fixed; right: 20px; bottom: 20px; z-index: 99; background: #2a1d14; color: #fff; padding: 14px 18px; border-radius: 14px; font-size: 14px; max-width: 360px; box-shadow: 0 8px 30px rgba(42,29,20,.25); }
+  .mla-toast.is-error { background: #b3402e; }
+  .mla-daybar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .mla-icon { font: inherit; font-size: 22px; width: 42px; height: 42px; border-radius: 999px; border: 1px solid #d9d2ca; background: #fff; cursor: pointer; color: #2a1d14; }
+  .mla-date { width: auto; }
+  .mla-day-title { font-family: Georgia, serif; font-size: 26px; margin: 22px 0 16px; text-transform: capitalize; }
+  .mla-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 22px; }
+  .mla-stat { background: #fff; border: 1px solid #ece7e1; border-radius: 18px; padding: 16px 18px; }
+  .mla-stat span { display: block; font-size: 28px; font-weight: 300; }
+  .mla-stat small { color: #8a8178; font-size: 13px; }
+  .mla-planning { display: grid; gap: 8px; }
+  .mla-slot { display: grid; grid-template-columns: 70px 1fr; gap: 14px; align-items: start; }
+  .mla-slot-time { font-size: 14px; color: #8a8178; padding-top: 16px; text-align: right; }
+  .mla-slot-free { border: 1px dashed #d9d2ca; border-radius: 16px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; color: #b8aca0; font-size: 13px; }
+  .mla-slot-pause { color: #b8aca0; font-size: 13px; padding: 14px 16px; border-radius: 16px; background: repeating-linear-gradient(45deg, #efe9e2, #efe9e2 8px, #f5f1ec 8px, #f5f1ec 16px); }
+  .mla-card { background: #fff; border: 1px solid #ece7e1; border-radius: 18px; padding: 16px 18px; }
+  .mla-rdv { display: grid; gap: 10px; }
+  .mla-rdv-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .mla-rdv-name { font-size: 16px; margin: 0; }
+  .mla-rdv-presta { font-size: 13px; color: #5b524a; margin: 3px 0 0; }
+  .mla-rdv-contact { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; }
+  .mla-rdv-contact a { color: #5b524a; }
+  .mla-rdv-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .mla-badge { font-size: 12px; background: #f5f1ec; border-radius: 999px; padding: 4px 10px; height: fit-content; white-space: nowrap; }
+  .mla-badge.is-past { background: #ece7e1; color: #8a8178; }
+  .mla-inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; background: #f5f1ec; border-radius: 14px; padding: 10px; }
+  .mla-inline .mla-input { width: auto; padding: 8px 10px; font-size: 14px; }
+  .mla-inline p { margin: 0; font-size: 14px; }
+  .mla-h2 { font-weight: 300; font-size: 28px; margin: 0 0 6px; }
+  .mla-sub { color: #8a8178; font-size: 14px; margin: 0 0 20px; }
+  .mla-head-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  .mla-search { max-width: 280px; }
+  .mla-avenir { display: grid; gap: 22px; }
+  .mla-group-title { font-family: Georgia, serif; font-size: 19px; margin: 0 0 10px; text-transform: capitalize; }
+  .mla-group { display: grid; gap: 8px; }
+  .mla-form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 24px; }
+  .mla-form-foot { grid-column: 1 / -1; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .mla-prestations { display: grid; gap: 8px; margin-bottom: 8px; }
+  .mla-presta-row { display: grid; grid-template-columns: 1.4fr 110px 2fr auto auto; gap: 10px; align-items: center; }
+  .mla-presta-add { grid-template-columns: 1.4fr 110px 2fr auto; background: transparent; border-style: dashed; }
+  .mla-empty { color: #8a8178; font-size: 14px; padding: 20px; text-align: center; border: 1px dashed #d9d2ca; border-radius: 18px; }
+  .mla-code { font-family: "Courier New", monospace; background: #f5f1ec; border: 1px dashed #b8aca0; border-radius: 10px; padding: 4px 8px; }
+  .mla-etat { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+  .mla-pastille { font-size: 13px; border-radius: 999px; padding: 6px 12px; background: #fff; border: 1px solid #ece7e1; }
+  .mla-pastille.is-ok::before { content: "● "; color: #3f6b3a; }
+  .mla-pastille.is-ko::before { content: "● "; color: #b3402e; }
+  .mla-motif { display: grid; gap: 8px; width: 100%; }
+  .mla-note { font-size: 12px; color: #8a8178; }
+  @media (max-width: 767px) {
+    .mla-app { padding: 0 14px 40px; }
+    .mla-top { gap: 12px; }
+    .mla-stats { grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    .mla-stat span { font-size: 22px; }
+    .mla-form-grid { grid-template-columns: 1fr; }
+    .mla-presta-row, .mla-presta-add { grid-template-columns: 1fr 1fr; }
+    .mla-slot { grid-template-columns: 52px 1fr; gap: 8px; }
+  }
+</style>
+
+<script>
+(function () {
+  var API_URL = "https://rdv-api-awu1.onrender.com";
+
+  // Mêmes règles que l'API (app/creneaux.py)
+  var OUVERTURE = 9 * 60, FERMETURE = 18 * 60, PAUSE_DEBUT = 12 * 60, PAUSE_FIN = 13 * 60, DUREE = 30;
+
+  var cle = null;
+  var prestations = [];
+  var jourCourant = new Date();
+  var cacheAvenir = [];
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ---------- Outils ----------
+  function lireSession() { try { return sessionStorage.getItem("ml-cle"); } catch (e) { return null; } }
+  function ecrireSession(v) { try { v ? sessionStorage.setItem("ml-cle", v) : sessionStorage.removeItem("ml-cle"); } catch (e) {} }
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function isoJour(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+  function depuisIso(iso) { var p = iso.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function heureDe(debut) { return debut.slice(11, 16); }
+  function heureLisible(h) { return h.replace(":", " h "); }
+  function prix(p) { return Number(p).toLocaleString("fr-FR", { style: "currency", currency: "EUR" }); }
+  function dateLongue(d) { return d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" }); }
+  function echapper(t) { var d = document.createElement("div"); d.textContent = t == null ? "" : String(t); return d.innerHTML; }
+  function prestationDe(id) { for (var i = 0; i < prestations.length; i++) if (prestations[i].id === id) return prestations[i]; return null; }
+
+  function creneauxDuJour(d) {
+    if (d.getDay() === 0) return [];
+    var liste = [];
+    for (var m = OUVERTURE; m + DUREE <= FERMETURE; m += DUREE) {
+      if (m >= PAUSE_DEBUT && m < PAUSE_FIN) continue;
+      liste.push(pad(Math.floor(m / 60)) + ":" + pad(m % 60));
+    }
+    return liste;
+  }
+
+  var toastTimer;
+  function toast(message, erreur) {
+    var el = $("mla-toast");
+    el.textContent = message;
+    el.className = "mla-toast" + (erreur ? " is-error" : "");
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.hidden = true; }, 4500);
+  }
+
+  function messageErreur(err) {
+    var data = err.data || {};
+    var texte = data.erreur || err.message || "Une erreur est survenue.";
+    if (data.details && data.details.length) texte += " " + data.details.map(function (d) { return d.message; }).join(" ");
+    return texte;
+  }
+
+  function api(chemin, options) {
+    options = options || {};
+    var entetes = { "X-API-Key": cle || "" };
+    if (options.body) entetes["Content-Type"] = "application/json";
+    var lent = setTimeout(function () { toast("Le serveur se réveille, quelques secondes…"); }, 4000);
+    return fetch(API_URL + chemin, { method: options.method || "GET", headers: entetes, body: options.body ? JSON.stringify(options.body) : undefined })
+      .then(function (rep) {
+        clearTimeout(lent);
+        if (rep.status === 204) return null;
+        return rep.json().catch(function () { return {}; }).then(function (data) {
+          if (rep.status === 401 && cle) { deconnecter("Clé refusée : reconnectez-vous."); }
+          if (!rep.ok) { var e = new Error(data.erreur || "Erreur " + rep.status); e.data = data; e.status = rep.status; throw e; }
+          return data;
+        });
+      }, function (e) { clearTimeout(lent); var err = new Error("Impossible de joindre le serveur."); throw err; });
+  }
+
+  // ---------- Connexion ----------
+  function connecter(valeur) {
+    cle = valeur;
+    return api("/rendez-vous?depuis=" + isoJour(new Date())).then(function () {
+      ecrireSession(cle);
+      $("mla-login").hidden = true;
+      $("mla-app").hidden = false;
+      return chargerPrestations().then(function () { afficherVue("planning"); });
+    });
+  }
+
+  function deconnecter(message) {
+    cle = null;
+    ecrireSession(null);
+    $("mla-app").hidden = true;
+    $("mla-login").hidden = false;
+    $("mla-cle").value = "";
+    $("mla-login-msg").textContent = message || "";
+  }
+
+  $("mla-login-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var bouton = e.target.querySelector("button");
+    bouton.disabled = true;
+    $("mla-login-msg").textContent = "";
+    connecter($("mla-cle").value.trim()).catch(function (err) {
+      cle = null;
+      $("mla-login-msg").textContent = err.status === 401 ? "Clé incorrecte." : messageErreur(err);
+    }).then(function () { bouton.disabled = false; });
+  });
+  $("mla-logout").addEventListener("click", function () { deconnecter(); });
+
+  // ---------- Onglets ----------
+  function afficherVue(nom) {
+    document.querySelectorAll("#mla .mla-tab").forEach(function (t) { t.classList.toggle("is-active", t.dataset.vue === nom); });
+    document.querySelectorAll("#mla .mla-vue").forEach(function (v) { v.hidden = v.dataset.vue !== nom; });
+    if (nom === "planning") chargerPlanning();
+    if (nom === "avenir") chargerAvenir();
+    if (nom === "nouveau") preparerNouveau();
+    if (nom === "prestations") afficherPrestations();
+    if (nom === "prestations") chargerEtat();
+  }
+  document.querySelectorAll("#mla .mla-tab").forEach(function (t) {
+    t.addEventListener("click", function () { afficherVue(t.dataset.vue); });
+  });
+
+  // ---------- Carte d'un rendez-vous (déplacer / annuler) ----------
+  function carteRdv(rdv, rafraichir) {
+    var p = prestationDe(rdv.prestation_id);
+    var passe = new Date(rdv.debut) < new Date();
+    var bientot = !passe && new Date(rdv.debut) - new Date() < 24 * 3600 * 1000;
+    var carte = document.createElement("div");
+    carte.className = "mla-card mla-rdv";
+    carte.innerHTML =
+      '<div class="mla-rdv-head"><div><p class="mla-rdv-name">' + echapper(rdv.client_nom) + '</p>' +
+      '<p class="mla-rdv-presta">' + (p ? echapper(p.nom) + " · " + prix(p.prix) : "Prestation supprimée") + " · n°" + rdv.id + '</p></div>' +
+      '<span class="mla-badge' + (passe ? " is-past" : "") + '">' + (passe ? "Passé" : heureLisible(heureDe(rdv.debut))) + '</span></div>' +
+      '<div class="mla-rdv-contact"><a href="tel:' + echapper(rdv.client_telephone.replace(/[^\d+]/g, "")) + '">' + echapper(rdv.client_telephone) + '</a>' +
+      '<a href="mailto:' + echapper(rdv.client_email) + '">' + echapper(rdv.client_email) + '</a></div>' +
+      (passe ? "" : bientot ? '<p class="mla-note">Moins de 24 h avant : ce rendez-vous ne peut plus être déplacé ni annulé (critères d\'annulation).</p>' :
+      '<div class="mla-rdv-actions"><button class="mla-btn mla-btn-light mla-btn-small" data-action="deplacer" type="button">Déplacer</button>' +
+      '<button class="mla-btn mla-btn-danger mla-btn-small" data-action="annuler" type="button">Annuler</button></div><div class="mla-zone"></div>');
+    if (passe || bientot) return carte;
+
+    var zone = carte.querySelector(".mla-zone");
+    carte.querySelector('[data-action="annuler"]').addEventListener("click", function () {
+      zone.innerHTML = '<div class="mla-inline mla-motif"><p>Annuler le rendez-vous de ' + echapper(rdv.client_nom) + " : quel est le motif ?</p>" +
+        '<select class="mla-input" data-motif><option value="">Choisissez un motif…</option>' +
+        '<option value="demande_client">À la demande du client</option>' +
+        '<option value="salon_indisponible">Le salon n\'est pas disponible</option>' +
+        '<option value="autre">Autre raison</option></select>' +
+        '<input class="mla-input" data-precision maxlength="200" placeholder="Précision pour le client (facultatif)">' +
+        '<p class="mla-note">Le client reçoit un email avec ce motif.</p>' +
+        '<div class="mla-rdv-actions"><button class="mla-btn mla-btn-danger-full mla-btn-small" data-ok type="button">Confirmer l\'annulation</button>' +
+        '<button class="mla-link" data-non type="button">Garder le rendez-vous</button></div></div>';
+      zone.querySelector("[data-non]").onclick = function () { zone.innerHTML = ""; };
+      zone.querySelector("[data-ok]").onclick = function (e) {
+        var motif = zone.querySelector("[data-motif]").value;
+        var precision = zone.querySelector("[data-precision]").value.trim();
+        if (!motif) { toast("Choisissez le motif de l'annulation.", true); return; }
+        e.target.disabled = true;
+        var params = "?motif=" + encodeURIComponent(motif) + (precision ? "&precision=" + encodeURIComponent(precision) : "");
+        api("/rendez-vous/" + rdv.id + params, { method: "DELETE" }).then(function () {
+          toast("Rendez-vous de " + rdv.client_nom + " annulé. Un email avec le motif lui a été envoyé.");
+          rafraichir();
+        }).catch(function (err) { e.target.disabled = false; toast(messageErreur(err), true); });
+      };
+    });
+    carte.querySelector('[data-action="deplacer"]').addEventListener("click", function () {
+      zone.innerHTML = '<div class="mla-inline"><input class="mla-input" type="date" data-jour value="' + rdv.debut.slice(0, 10) + '">' +
+        '<select class="mla-input" data-heure><option value="">Créneau…</option></select>' +
+        '<button class="mla-btn mla-btn-dark mla-btn-small" data-ok type="button">Valider</button>' +
+        '<button class="mla-link" data-non type="button">Fermer</button></div>';
+      var champJour = zone.querySelector("[data-jour]"), champHeure = zone.querySelector("[data-heure]");
+      function remplir() { remplirCreneaux(champJour.value, champHeure); }
+      champJour.onchange = remplir; remplir();
+      zone.querySelector("[data-non]").onclick = function () { zone.innerHTML = ""; };
+      zone.querySelector("[data-ok]").onclick = function (e) {
+        if (!champJour.value || !champHeure.value) { toast("Choisissez un jour et un créneau.", true); return; }
+        e.target.disabled = true;
+        api("/rendez-vous/" + rdv.id, { method: "PATCH", body: { debut: champJour.value + "T" + champHeure.value + ":00" } }).then(function () {
+          toast("Rendez-vous déplacé au " + dateLongue(depuisIso(champJour.value)) + " à " + heureLisible(champHeure.value) + ". Le client est prévenu par email.");
+          rafraichir();
+        }).catch(function (err) { e.target.disabled = false; toast(messageErreur(err), true); });
+      };
+    });
+    return carte;
+  }
+
+  function remplirCreneaux(jour, select, valeurAGarder) {
+    select.innerHTML = '<option value="">Chargement…</option>';
+    if (!jour) { select.innerHTML = '<option value="">Choisissez un jour</option>'; return Promise.resolve(); }
+    return api("/creneaux?jour=" + jour).then(function (data) {
+      var liste = data.creneaux || [];
+      select.innerHTML = liste.length
+        ? '<option value="">Créneau…</option>' + liste.map(function (h) { return '<option value="' + h + '">' + heureLisible(h) + "</option>"; }).join("")
+        : '<option value="">' + echapper(data.message || "Complet") + "</option>";
+      if (valeurAGarder && liste.indexOf(valeurAGarder) !== -1) select.value = valeurAGarder;
+    }).catch(function (err) { select.innerHTML = '<option value="">Erreur</option>'; toast(messageErreur(err), true); });
+  }
+
+  // ---------- Planning du jour ----------
+  function chargerPlanning() {
+    var jour = isoJour(jourCourant);
+    $("mla-jour").value = jour;
+    $("mla-day-title").textContent = dateLongue(jourCourant);
+    $("mla-planning").innerHTML = '<p class="mla-empty">Chargement…</p>';
+    api("/rendez-vous?jour=" + jour).then(function (liste) {
+      var parHeure = {};
+      var ca = 0;
+      liste.forEach(function (r) { parHeure[heureDe(r.debut)] = r; var p = prestationDe(r.prestation_id); if (p) ca += p.prix; });
+      var creneaux = creneauxDuJour(jourCourant);
+      var maintenant = new Date();
+      var libres = creneaux.filter(function (h) { return !parHeure[h] && depuisIso(jour).setHours(+h.slice(0, 2), +h.slice(3)) > maintenant; });
+      $("mla-stat-nb").textContent = liste.length;
+      $("mla-stat-libres").textContent = libres.length;
+      $("mla-stat-ca").textContent = prix(ca).replace(",00", "");
+
+      var conteneur = $("mla-planning");
+      conteneur.innerHTML = "";
+      if (!creneaux.length) { conteneur.innerHTML = '<p class="mla-empty">Le salon est fermé le dimanche.</p>'; return; }
+      var pauseAffichee = false;
+      creneaux.forEach(function (h) {
+        if (!pauseAffichee && h >= "13:00") {
+          pauseAffichee = true;
+          var pause = document.createElement("div");
+          pause.className = "mla-slot";
+          pause.innerHTML = '<span class="mla-slot-time">12 h 00</span><div class="mla-slot-pause">Pause déjeuner</div>';
+          conteneur.appendChild(pause);
+        }
+        var ligne = document.createElement("div");
+        ligne.className = "mla-slot";
+        ligne.innerHTML = '<span class="mla-slot-time">' + heureLisible(h) + "</span>";
+        if (parHeure[h]) {
+          ligne.appendChild(carteRdv(parHeure[h], chargerPlanning));
+        } else {
+          var libre = document.createElement("div");
+          libre.className = "mla-slot-free";
+          var futur = libres.indexOf(h) !== -1;
+          libre.innerHTML = "<span>" + (futur ? "Libre" : "—") + "</span>" +
+            (futur ? '<button class="mla-link" type="button">+ Ajouter</button>' : "");
+          if (futur) libre.querySelector("button").onclick = function () { preparerNouveau(jour, h); afficherOnglet("nouveau"); };
+          ligne.appendChild(libre);
+        }
+        conteneur.appendChild(ligne);
+      });
+      // Rendez-vous hors grille (ne devrait pas arriver)
+      liste.filter(function (r) { return creneaux.indexOf(heureDe(r.debut)) === -1; }).forEach(function (r) {
+        var ligne = document.createElement("div");
+        ligne.className = "mla-slot";
+        ligne.innerHTML = '<span class="mla-slot-time">' + heureLisible(heureDe(r.debut)) + "</span>";
+        ligne.appendChild(carteRdv(r, chargerPlanning));
+        conteneur.appendChild(ligne);
+      });
+    }).catch(function (err) { $("mla-planning").innerHTML = '<p class="mla-empty">' + echapper(messageErreur(err)) + "</p>"; });
+  }
+
+  function changerJour(delta) { jourCourant = new Date(jourCourant.getFullYear(), jourCourant.getMonth(), jourCourant.getDate() + delta); chargerPlanning(); }
+  $("mla-prev").onclick = function () { changerJour(-1); };
+  $("mla-next").onclick = function () { changerJour(1); };
+  $("mla-today").onclick = function () { jourCourant = new Date(); chargerPlanning(); };
+  $("mla-jour").onchange = function (e) { if (e.target.value) { jourCourant = depuisIso(e.target.value); chargerPlanning(); } };
+
+  // ---------- À venir ----------
+  function chargerAvenir() {
+    $("mla-avenir").innerHTML = '<p class="mla-empty">Chargement…</p>';
+    api("/rendez-vous?depuis=" + isoJour(new Date())).then(function (liste) {
+      cacheAvenir = liste.filter(function (r) { return new Date(r.debut) >= new Date(Date.now() - 30 * 60000); });
+      afficherAvenir();
+    }).catch(function (err) { $("mla-avenir").innerHTML = '<p class="mla-empty">' + echapper(messageErreur(err)) + "</p>"; });
+  }
+  function afficherAvenir() {
+    var filtre = $("mla-recherche").value.trim().toLowerCase();
+    var liste = cacheAvenir.filter(function (r) {
+      return !filtre || (r.client_nom + " " + r.client_email + " " + r.client_telephone).toLowerCase().indexOf(filtre) !== -1;
+    });
+    var conteneur = $("mla-avenir");
+    conteneur.innerHTML = "";
+    if (!liste.length) { conteneur.innerHTML = '<p class="mla-empty">' + (filtre ? "Aucun client ne correspond." : "Aucun rendez-vous à venir.") + "</p>"; return; }
+    var groupes = {};
+    liste.forEach(function (r) { var j = r.debut.slice(0, 10); (groupes[j] = groupes[j] || []).push(r); });
+    Object.keys(groupes).sort().forEach(function (j) {
+      var bloc = document.createElement("div");
+      bloc.innerHTML = '<p class="mla-group-title">' + dateLongue(depuisIso(j)) + " · " + groupes[j].length + " rdv</p>";
+      var groupe = document.createElement("div");
+      groupe.className = "mla-group";
+      groupes[j].forEach(function (r) { groupe.appendChild(carteRdv(r, chargerAvenir)); });
+      bloc.appendChild(groupe);
+      conteneur.appendChild(bloc);
+    });
+  }
+  $("mla-recherche").addEventListener("input", afficherAvenir);
+
+  // ---------- Nouveau rendez-vous ----------
+  function afficherOnglet(nom) {
+    document.querySelectorAll("#mla .mla-tab").forEach(function (t) { t.classList.toggle("is-active", t.dataset.vue === nom); });
+    document.querySelectorAll("#mla .mla-vue").forEach(function (v) { v.hidden = v.dataset.vue !== nom; });
+  }
+  function preparerNouveau(jour, heure) {
+    var select = $("mla-new-prestation");
+    var actuelle = select.value;
+    select.innerHTML = prestations.length
+      ? prestations.map(function (p) { return '<option value="' + p.id + '">' + echapper(p.nom) + " · " + prix(p.prix) + "</option>"; }).join("")
+      : '<option value="">Ajoutez d\'abord une prestation</option>';
+    if (actuelle) select.value = actuelle;
+    var champJour = $("mla-new-jour");
+    champJour.min = isoJour(new Date());
+    if (jour) champJour.value = jour;
+    if (!champJour.value) champJour.value = isoJour(new Date());
+    remplirCreneaux(champJour.value, $("mla-new-heure"), heure);
+  }
+  $("mla-new-jour").onchange = function () { remplirCreneaux($("mla-new-jour").value, $("mla-new-heure")); };
+  $("mla-new").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var form = e.target, msg = $("mla-new-msg"), bouton = form.querySelector('button[type="submit"]');
+    msg.className = "mla-msg"; msg.textContent = "";
+    if (!$("mla-new-prestation").value || !$("mla-new-heure").value) { msg.textContent = "Choisissez une prestation et un créneau."; return; }
+    bouton.disabled = true;
+    var jour = $("mla-new-jour").value, heure = $("mla-new-heure").value;
+    api("/salon/rendez-vous", { method: "POST", body: {
+      prestation_id: +$("mla-new-prestation").value,
+      client_nom: form.elements["client_nom"].value.trim(),
+      client_email: form.elements["client_email"].value.trim(),
+      client_telephone: form.elements["client_telephone"].value.trim(),
+      debut: jour + "T" + heure + ":00"
+    } }).then(function (rdv) {
+      msg.className = "mla-msg is-ok";
+      msg.innerHTML = "Rendez-vous n°" + rdv.id + " enregistré pour le " + dateLongue(depuisIso(jour)) + " à " + heureLisible(heure) +
+        '. Code de gestion à donner au client : <span class="mla-code">' + echapper(rdv.jeton) + "</span>";
+      form.elements["client_nom"].value = ""; form.elements["client_email"].value = ""; form.elements["client_telephone"].value = "";
+      remplirCreneaux(jour, $("mla-new-heure"));
+    }).catch(function (err) { msg.textContent = messageErreur(err); })
+      .then(function () { bouton.disabled = false; });
+  });
+
+  // ---------- Prestations ----------
+  function chargerPrestations() {
+    return api("/prestations").then(function (liste) { prestations = liste; });
+  }
+  function afficherPrestations() {
+    var conteneur = $("mla-prestations");
+    conteneur.innerHTML = "";
+    if (!prestations.length) { conteneur.innerHTML = '<p class="mla-empty">Aucune prestation : ajoutez la première ci-dessous.</p>'; return; }
+    prestations.forEach(function (p) {
+      var ligne = document.createElement("form");
+      ligne.className = "mla-card mla-presta-row";
+      ligne.innerHTML =
+        '<input name="nom" class="mla-input" value="' + echapper(p.nom) + '" required>' +
+        '<input name="prix" class="mla-input" type="number" min="1" max="1000" step="0.5" value="' + p.prix + '" required>' +
+        '<input name="description" class="mla-input" value="' + echapper(p.description || "") + '" placeholder="Description">' +
+        '<button class="mla-btn mla-btn-dark mla-btn-small" type="submit">Enregistrer</button>' +
+        '<button class="mla-btn mla-btn-danger mla-btn-small" data-suppr type="button">Supprimer</button>';
+      ligne.addEventListener("submit", function (e) {
+        e.preventDefault();
+        api("/prestations/" + p.id, { method: "PATCH", body: {
+          nom: ligne.elements["nom"].value.trim(), prix: +ligne.elements["prix"].value,
+          description: ligne.elements["description"].value.trim() || null
+        } }).then(function () { toast("Prestation mise à jour."); return chargerPrestations(); })
+          .then(afficherPrestations).catch(function (err) { toast(messageErreur(err), true); });
+      });
+      var suppr = ligne.querySelector("[data-suppr]");
+      suppr.addEventListener("click", function () {
+        if (suppr.dataset.confirme !== "1") { suppr.dataset.confirme = "1"; suppr.textContent = "Confirmer ?"; suppr.className = "mla-btn mla-btn-danger-full mla-btn-small"; return; }
+        api("/prestations/" + p.id, { method: "DELETE" }).then(function () { toast("Prestation supprimée."); return chargerPrestations(); })
+          .then(afficherPrestations).catch(function (err) { toast(messageErreur(err), true); afficherPrestations(); });
+      });
+      conteneur.appendChild(ligne);
+    });
+  }
+  $("mla-presta-new").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var f = e.target;
+    api("/prestations", { method: "POST", body: {
+      nom: f.elements["nom"].value.trim(), prix: +f.elements["prix"].value,
+      description: f.elements["description"].value.trim() || null
+    } }).then(function () { f.reset(); toast("Prestation ajoutée : elle apparaît déjà sur le site."); return chargerPrestations(); })
+      .then(afficherPrestations).catch(function (err) { toast(messageErreur(err), true); });
+  });
+
+  // ---------- État du service (emails, base de données) ----------
+  function chargerEtat() {
+    api("/salon/etat").then(function (etat) {
+      $("mla-etat").innerHTML =
+        '<span class="mla-pastille ' + (etat.emails ? "is-ok" : "is-ko") + '">Emails aux clients : ' + (etat.emails ? "activés" : "non configurés") + "</span>" +
+        '<span class="mla-pastille ' + (etat.base === "postgres" ? "is-ok" : "is-ko") + '">Base : ' +
+        (etat.base === "postgres" ? "données conservées" : "temporaire, effacée à chaque mise en veille") + "</span>";
+    }).catch(function () { $("mla-etat").innerHTML = ""; });
+  }
+
+  // ---------- Démarrage ----------
+  var memorisee = lireSession();
+  if (memorisee) connecter(memorisee).catch(function () { deconnecter(); });
+})();
+</script>

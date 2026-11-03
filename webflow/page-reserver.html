@@ -1,0 +1,436 @@
+<div id="ml-booking" class="mlb">
+  <div class="mlb-switch" role="tablist">
+    <button class="mlb-switch-btn is-active" data-onglet="reserver" type="button">Prendre rendez-vous</button>
+    <button class="mlb-switch-btn" data-onglet="gerer" type="button">Gérer mon rendez-vous</button>
+  </div>
+
+  <!-- ===== Prendre rendez-vous ===== -->
+  <div class="mlb-onglet" data-onglet="reserver">
+    <div class="mlb-step">
+      <p class="mlb-step-title"><span class="mlb-num">1</span> Choisissez une prestation</p>
+      <div id="mlb-prestations" class="mlb-chips"><p class="mlb-muted">Chargement des prestations…</p></div>
+    </div>
+
+    <div class="mlb-step">
+      <p class="mlb-step-title"><span class="mlb-num">2</span> Choisissez un jour</p>
+      <div id="mlb-jours" class="mlb-days"></div>
+    </div>
+
+    <div class="mlb-step">
+      <p class="mlb-step-title"><span class="mlb-num">3</span> Choisissez un créneau</p>
+      <div id="mlb-creneaux" class="mlb-slots"><p class="mlb-muted">Sélectionnez d'abord un jour.</p></div>
+    </div>
+
+    <form id="mlb-form" class="mlb-step" novalidate>
+      <p class="mlb-step-title"><span class="mlb-num">4</span> Vos coordonnées</p>
+      <div class="mlb-fields">
+        <label class="mlb-label">Nom et prénom
+          <input class="mlb-input" name="client_nom" type="text" autocomplete="name" placeholder="Camille Martin" required>
+        </label>
+        <label class="mlb-label">Email
+          <input class="mlb-input" name="client_email" type="email" autocomplete="email" placeholder="camille@exemple.fr" required>
+        </label>
+        <label class="mlb-label">Téléphone
+          <input class="mlb-input" name="client_telephone" type="tel" autocomplete="tel" placeholder="06 12 34 56 78" required>
+        </label>
+      </div>
+      <!-- Champ piège : invisible pour les visiteurs, seuls les robots le remplissent -->
+      <div class="mlb-piege" aria-hidden="true">
+        <label>Site web <input name="site_web" type="text" tabindex="-1" autocomplete="off"></label>
+      </div>
+      <p id="mlb-recap" class="mlb-recap"></p>
+      <div id="mlb-erreur" class="mlb-error" role="alert"></div>
+      <button id="mlb-submit" class="mlb-submit" type="submit" disabled>Confirmer le rendez-vous</button>
+      <p id="mlb-manque" class="mlb-manque">Pour confirmer, choisissez une prestation, un jour et un créneau.</p>
+      <p class="mlb-rgpd">Vos coordonnées servent uniquement à gérer votre rendez-vous. Elles ne sont ni revendues ni utilisées pour de la publicité.</p>
+    </form>
+
+    <div id="mlb-confirmation" class="mlb-confirm" hidden></div>
+  </div>
+
+  <!-- ===== Gérer mon rendez-vous ===== -->
+  <div class="mlb-onglet" data-onglet="gerer" hidden>
+    <form id="mlg-form" class="mlb-step" novalidate>
+      <p class="mlb-intro">Entrez le numéro et le code de gestion reçus lors de votre réservation.</p>
+      <div class="mlb-fields mlb-fields-2">
+        <label class="mlb-label">Numéro du rendez-vous
+          <input class="mlb-input" name="rdv_id" type="number" min="1" inputmode="numeric" placeholder="12" required>
+        </label>
+        <label class="mlb-label">Code de gestion
+          <input class="mlb-input" name="jeton" type="text" autocomplete="off" spellcheck="false" placeholder="ex. 0q6EuuXn-OAUUkw6lZPXEQ" required>
+        </label>
+      </div>
+      <div id="mlg-erreur" class="mlb-error" role="alert"></div>
+      <button class="mlb-submit" type="submit">Retrouver mon rendez-vous</button>
+    </form>
+    <div id="mlg-rdv" hidden></div>
+  </div>
+</div>
+
+<style>
+  .mlb { font-family: Arial, sans-serif; color: #2a1d14; background: #ffffff; border: 1px solid #ece7e1; border-radius: 22px; padding: 32px; }
+  .mlb [hidden] { display: none !important; }
+  .mlb-switch { display: inline-flex; gap: 4px; background: #f5f1ec; border-radius: 999px; padding: 4px; margin-bottom: 28px; }
+  .mlb-switch-btn { font: inherit; font-size: 14px; cursor: pointer; border: 0; background: transparent; color: #5b524a; padding: 10px 18px; border-radius: 999px; }
+  .mlb-switch-btn.is-active { background: #2a1d14; color: #fff; }
+  .mlb-step { margin: 0 0 30px; }
+  .mlb-step-title { display: flex; align-items: center; gap: 10px; font-size: 15px; margin: 0 0 14px; }
+  .mlb-num { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 999px; background: #2a1d14; color: #fff; font-size: 12px; }
+  .mlb-muted, .mlb-intro { color: #8a8178; font-size: 14px; margin: 0; }
+  .mlb-intro { margin-bottom: 16px; }
+  .mlb-chips, .mlb-slots { display: flex; flex-wrap: wrap; gap: 10px; }
+  .mlb-chip, .mlb-slot, .mlb-day { font: inherit; cursor: pointer; background: #fff; color: #2a1d14; border: 1px solid #d9d2ca; border-radius: 999px; transition: background .15s, color .15s, border-color .15s; }
+  .mlb-chip { padding: 11px 18px; font-size: 14px; text-align: left; }
+  .mlb-chip small { display: block; color: #8a8178; font-size: 12px; margin-top: 2px; }
+  .mlb-slot { padding: 9px 16px; font-size: 14px; }
+  .mlb-days { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
+  .mlb-day { flex: 0 0 auto; width: 64px; padding: 10px 0; border-radius: 16px; text-align: center; font-size: 12px; text-transform: capitalize; }
+  .mlb-day strong { display: block; font-size: 18px; font-weight: 400; margin-top: 2px; }
+  .mlb-chip:hover, .mlb-slot:hover, .mlb-day:hover { border-color: #2a1d14; }
+  .mlb-chip.is-active, .mlb-slot.is-active, .mlb-day.is-active { background: #2a1d14; color: #fff; border-color: #2a1d14; }
+  .mlb-chip.is-active small { color: #d8ccbf; }
+  .mlb-day:disabled { opacity: .35; cursor: not-allowed; border-color: #ece7e1; }
+  .mlb-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .mlb-fields-2 { grid-template-columns: 1fr 2fr; }
+  .mlb-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #5b524a; }
+  .mlb-input { font: inherit; font-size: 15px; color: #2a1d14; padding: 12px 14px; border: 1px solid #d9d2ca; border-radius: 12px; background: #fff; width: 100%; box-sizing: border-box; }
+  .mlb-input:focus { outline: none; border-color: #2a1d14; }
+  .mlb-input.is-invalid { border-color: #b3402e; }
+  .mlb-recap { font-size: 14px; color: #5b524a; margin: 18px 0 0; min-height: 20px; }
+  .mlb-error { color: #b3402e; font-size: 14px; margin: 10px 0 0; }
+  .mlb-error ul { margin: 6px 0 0; padding-left: 18px; }
+  .mlb-submit, .mlb-btn { font: inherit; font-size: 15px; cursor: pointer; padding: 14px 36px; border-radius: 999px; border: 1px solid #2a1d14; background: #2a1d14; color: #fff; }
+  .mlb-submit { margin-top: 18px; }
+  .mlb-submit:disabled, .mlb-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .mlb-btn-light { background: #fff; color: #2a1d14; }
+  .mlb-btn-danger { background: #fff; color: #b3402e; border-color: #e3b8ad; }
+  .mlb-btn-small { padding: 10px 20px; font-size: 14px; }
+  .mlb-link { font: inherit; font-size: 14px; background: none; border: 0; color: #5b524a; text-decoration: underline; cursor: pointer; }
+  .mlb-piege { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+  .mlb-rgpd { font-size: 12px; color: #8a8178; line-height: 1.5; margin: 14px 0 0; max-width: 520px; }
+  .mlb-confirm { text-align: center; padding: 20px 0; }
+  .mlb-code { display: inline-block; font-family: "Courier New", monospace; font-size: 15px; letter-spacing: 1px; background: #f5f1ec; border: 1px dashed #b8aca0; border-radius: 12px; padding: 10px 16px; margin: 10px 0 6px; word-break: break-all; }
+  .mlb-confirm h3, .mlb-rdv-title { font-family: Georgia, serif; font-weight: 400; font-size: 28px; margin: 0 0 12px; }
+  .mlb-confirm p { color: #5b524a; font-size: 15px; line-height: 1.6; margin: 0 0 6px; }
+  .mlb-rdv-card { background: #f5f1ec; border-radius: 18px; padding: 22px; }
+  .mlb-rdv-card p { margin: 0 0 6px; font-size: 15px; color: #3d3630; }
+  .mlb-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; align-items: center; }
+  .mlb-zone { margin-top: 16px; }
+  .mlb-ok { color: #3f6b3a; font-size: 15px; margin: 12px 0 0; }
+  .mlb-manque { font-size: 13px; color: #8a6d3b; margin: 10px 0 0; }
+  .mlb-attente { background: #f5f1ec; border-radius: 12px; padding: 10px 14px; font-size: 13px; color: #5b524a; margin: 0 0 18px; }
+  @media (max-width: 767px) {
+    .mlb { padding: 20px; border-radius: 18px; }
+    .mlb-fields, .mlb-fields-2 { grid-template-columns: 1fr; }
+    .mlb-submit { width: 100%; }
+    .mlb-switch { display: flex; }
+    .mlb-switch-btn { flex: 1; padding: 10px 8px; font-size: 13px; }
+  }
+</style>
+
+<script>
+(function () {
+  // Adresse de l'API en ligne (Render), sans "/" à la fin
+  var API_URL = "https://rdv-api-awu1.onrender.com";
+
+  var JOURS_AFFICHES = 14;
+  var etat = { prestation: null, jour: null, heure: null };
+  var racine = document.getElementById("ml-booking");
+  var $ = function (id) { return document.getElementById(id); };
+
+  var elPrestations = $("mlb-prestations"), elJours = $("mlb-jours"), elCreneaux = $("mlb-creneaux");
+  var form = $("mlb-form"), elRecap = $("mlb-recap"), elErreur = $("mlb-erreur"), btn = $("mlb-submit"), elConfirmation = $("mlb-confirmation");
+
+  // ---------- Outils ----------
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function isoJour(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+  function prix(p) { return Number(p).toLocaleString("fr-FR", { style: "currency", currency: "EUR" }); }
+  function dateLongue(iso) {
+    var p = iso.split("-");
+    return new Date(+p[0], +p[1] - 1, +p[2]).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+  }
+  function heureLisible(h) { return h.replace(":", " h "); }
+  function echapper(t) { var d = document.createElement("div"); d.textContent = t == null ? "" : String(t); return d.innerHTML; }
+  function sansAccents(t) { return String(t).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""); }
+
+  function appelApi(chemin, options) {
+    options = options || {};
+    var reveil = setTimeout(function () { avertir(true); }, 5000);
+    return fetch(API_URL + chemin, options).then(function (rep) {
+      clearTimeout(reveil); avertir(false);
+      if (rep.status === 204) return null;
+      return rep.json().catch(function () { return {}; }).then(function (data) {
+        if (!rep.ok) { var e = new Error(data.erreur || "Erreur " + rep.status); e.data = data; e.status = rep.status; throw e; }
+        return data;
+      });
+    }, function () {
+      clearTimeout(reveil); avertir(false);
+      var e = new Error("reseau"); e.reseau = true; throw e;
+    });
+  }
+  // Sur l'offre gratuite, le serveur s'endort : on prévient au lieu de laisser la page muette
+  var elAttente = document.createElement("p");
+  elAttente.className = "mlb-attente";
+  elAttente.textContent = "Le service de réservation se réveille, cela peut prendre jusqu'à une minute…";
+  elAttente.hidden = true;
+  racine.insertBefore(elAttente, racine.firstChild);
+  function avertir(visible) { elAttente.hidden = !visible; }
+
+  function texteErreur(err) {
+    var data = err.data || {};
+    var html = echapper(data.erreur || (err.reseau ? "Le service de réservation ne répond pas. Vérifiez votre connexion et réessayez dans un instant." : err.message));
+    if (data.details && data.details.length) html += "<ul>" + data.details.map(function (d) { return "<li>" + echapper(d.message) + "</li>"; }).join("") + "</ul>";
+    return html;
+  }
+  function marquerActif(conteneur, bouton) {
+    conteneur.querySelectorAll(".is-active").forEach(function (b) { b.classList.remove("is-active"); });
+    bouton.classList.add("is-active");
+  }
+
+  // ---------- Onglets ----------
+  function ouvrirOnglet(nom) {
+    racine.querySelectorAll(".mlb-switch-btn").forEach(function (b) { b.classList.toggle("is-active", b.dataset.onglet === nom); });
+    racine.querySelectorAll(".mlb-onglet").forEach(function (o) { o.hidden = o.dataset.onglet !== nom; });
+  }
+  racine.querySelectorAll(".mlb-switch-btn").forEach(function (b) { b.addEventListener("click", function () { ouvrirOnglet(b.dataset.onglet); }); });
+
+  // =============== PRENDRE RENDEZ-VOUS ===============
+  function majRecap() {
+    var ok = etat.prestation && etat.jour && etat.heure;
+    btn.disabled = !ok;
+    // On dit à la cliente ce qui manque, au lieu d'un bouton gris sans explication
+    var manque = [];
+    if (!etat.prestation) manque.push("une prestation");
+    if (!etat.jour) manque.push("un jour");
+    if (!etat.heure) manque.push("un créneau");
+    var elManque = $("mlb-manque");
+    elManque.hidden = ok;
+    if (!ok) elManque.textContent = "Pour confirmer, choisissez encore " + (manque.length > 1 ? manque.slice(0, -1).join(", ") + " et " + manque[manque.length - 1] : manque[0]) + ".";
+    elRecap.textContent = ok ? etat.prestation.nom + " · " + dateLongue(etat.jour) + " à " + heureLisible(etat.heure) + " · " + prix(etat.prestation.prix) : "";
+  }
+
+  // 1. Prestations (?prestation=coupe dans l'adresse présélectionne la prestation)
+  function chargerPrestations() {
+    var voulue = new URLSearchParams(location.search).get("prestation");
+    appelApi("/prestations").then(function (liste) {
+      elPrestations.innerHTML = "";
+      if (!liste.length) { elPrestations.innerHTML = '<p class="mlb-muted">Aucune prestation pour le moment.</p>'; return; }
+      liste.forEach(function (p) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "mlb-chip";
+        b.innerHTML = echapper(p.nom) + "<small>" + prix(p.prix) + (p.description ? " · " + echapper(p.description) : "") + "</small>";
+        b.addEventListener("click", function () { etat.prestation = p; marquerActif(elPrestations, b); majRecap(); });
+        elPrestations.appendChild(b);
+        if (voulue && !etat.prestation && sansAccents(p.nom).indexOf(sansAccents(voulue)) !== -1) b.click();
+      });
+    }).catch(function (err) {
+      elPrestations.innerHTML = '<p class="mlb-muted">' + texteErreur(err) + "</p>";
+    });
+  }
+
+  // 2. Jours (le dimanche est fermé, comme dans l'API)
+  function afficherJours() {
+    var aujourdhui = new Date();
+    for (var i = 0; i < JOURS_AFFICHES; i++) {
+      var d = new Date(aujourdhui.getFullYear(), aujourdhui.getMonth(), aujourdhui.getDate() + i);
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "mlb-day";
+      b.dataset.jour = isoJour(d);
+      b.innerHTML = d.toLocaleDateString("fr-FR", { weekday: "short" }).replace(".", "") +
+        "<strong>" + d.getDate() + "</strong>" + d.toLocaleDateString("fr-FR", { month: "short" }).replace(".", "");
+      if (d.getDay() === 0) { b.disabled = true; b.title = "Fermé le dimanche"; }
+      b.addEventListener("click", function (e) {
+        var bouton = e.currentTarget;
+        etat.jour = bouton.dataset.jour;
+        etat.heure = null;
+        marquerActif(elJours, bouton);
+        majRecap();
+        chargerCreneaux(etat.jour);
+      });
+      elJours.appendChild(b);
+    }
+  }
+
+  // 3. Créneaux libres
+  function chargerCreneaux(jour) {
+    elCreneaux.innerHTML = '<p class="mlb-muted">Recherche des créneaux libres…</p>';
+    appelApi("/creneaux?jour=" + jour).then(function (data) {
+      elCreneaux.innerHTML = "";
+      if (!data.creneaux || !data.creneaux.length) {
+        elCreneaux.innerHTML = '<p class="mlb-muted">' + echapper(data.message || "Plus aucun créneau libre ce jour-là. Essayez un autre jour.") + "</p>";
+        return;
+      }
+      data.creneaux.forEach(function (h) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "mlb-slot";
+        b.textContent = heureLisible(h);
+        b.addEventListener("click", function () { etat.heure = h; marquerActif(elCreneaux, b); majRecap(); });
+        elCreneaux.appendChild(b);
+      });
+    }).catch(function (err) { elCreneaux.innerHTML = '<p class="mlb-muted">' + texteErreur(err) + "</p>"; });
+  }
+
+  // 4. Envoi du rendez-vous
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (btn.disabled) return;
+    form.querySelectorAll(".is-invalid").forEach(function (i) { i.classList.remove("is-invalid"); });
+    elErreur.innerHTML = "";
+    btn.disabled = true;
+    btn.textContent = "Réservation en cours…";
+    var corps = {
+      prestation_id: etat.prestation.id,
+      client_nom: form.elements["client_nom"].value.trim(),
+      client_email: form.elements["client_email"].value.trim(),
+      client_telephone: form.elements["client_telephone"].value.trim(),
+      debut: etat.jour + "T" + etat.heure + ":00",
+      site_web: form.elements["site_web"].value
+    };
+    appelApi("/rendez-vous", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) })
+      .then(function (rdv) {
+        racine.querySelectorAll('[data-onglet="reserver"] > .mlb-step').forEach(function (s) { s.hidden = true; });
+        elConfirmation.hidden = false;
+        elConfirmation.innerHTML =
+          "<h3>C'est réservé, " + echapper(corps.client_nom.split(" ")[0]) + "</h3>" +
+          "<p>" + echapper(etat.prestation.nom) + ", " + dateLongue(etat.jour) + " à " + heureLisible(etat.heure) + ".</p>" +
+          "<p>Un email de confirmation part à <strong>" + echapper(corps.client_email) + "</strong> (pensez à regarder dans les indésirables).</p>" +
+          "<p>Rendez-vous n°" + rdv.id + ". Votre code de gestion :</p>" +
+          '<p class="mlb-code">' + echapper(rdv.jeton) + "</p>" +
+          "<p>Notez-le bien : avec le numéro, il permet de déplacer ou d'annuler votre rendez-vous dans l'onglet « Gérer mon rendez-vous » (jusqu'à 24 h avant). Il ne sera plus affiché.</p>";
+        elConfirmation.scrollIntoView({ behavior: "smooth", block: "center" });
+      })
+      .catch(function (err) {
+        var data = err.data || {};
+        (data.details || []).forEach(function (d) { var c = form.querySelector('[name="' + d.champ + '"]'); if (c) c.classList.add("is-invalid"); });
+        elErreur.innerHTML = texteErreur(err);
+        if (err.status === 409 && etat.jour) { etat.heure = null; chargerCreneaux(etat.jour); }
+      })
+      .finally(function () { btn.textContent = "Confirmer le rendez-vous"; majRecap(); });
+  });
+
+  // =============== GÉRER MON RENDEZ-VOUS ===============
+  var formGerer = $("mlg-form"), elGererErreur = $("mlg-erreur"), elRdv = $("mlg-rdv");
+  var acces = null; // { id, jeton }
+  var prestationsParId = {};
+
+  function avecJeton(methode, corps) {
+    var options = { method: methode || "GET", headers: { "X-Jeton": acces.jeton } };
+    if (corps) { options.headers["Content-Type"] = "application/json"; options.body = JSON.stringify(corps); }
+    return options;
+  }
+
+  function afficherRdv(rdv, message) {
+    var p = prestationsParId[rdv.prestation_id];
+    var jour = rdv.debut.slice(0, 10), heure = rdv.debut.slice(11, 16);
+    var modifiable = new Date(rdv.debut) - new Date() >= 24 * 3600 * 1000;
+    elRdv.hidden = false;
+    elRdv.innerHTML =
+      '<div class="mlb-rdv-card"><p class="mlb-rdv-title">' + echapper(dateLongue(jour)) + " à " + heureLisible(heure) + "</p>" +
+      "<p>" + (p ? echapper(p.nom) + " · " + prix(p.prix) : "Prestation") + "</p>" +
+      "<p>Au nom de " + echapper(rdv.client_nom) + " · n°" + rdv.id + "</p></div>" +
+      (message ? '<p class="mlb-ok">' + echapper(message) + "</p>" : "") +
+      (modifiable
+        ? '<div class="mlb-actions"><button class="mlb-btn mlb-btn-light mlb-btn-small" data-action="deplacer" type="button">Déplacer</button>' +
+          '<button class="mlb-btn mlb-btn-danger mlb-btn-small" data-action="annuler" type="button">Annuler le rendez-vous</button>' +
+          '<button class="mlb-link" data-action="autre" type="button">Un autre rendez-vous</button></div>'
+        : '<p class="mlb-muted" style="margin-top:16px">Ce rendez-vous a lieu dans moins de 24 h : pour le modifier, appelez directement le salon.</p>') +
+      '<div class="mlb-zone"></div><div class="mlb-error" data-erreur></div>';
+    var zone = elRdv.querySelector(".mlb-zone"), elErr = elRdv.querySelector("[data-erreur]");
+    var autre = elRdv.querySelector('[data-action="autre"]');
+    if (autre) autre.onclick = reinitialiserGestion;
+    if (!modifiable) return;
+
+    elRdv.querySelector('[data-action="annuler"]').onclick = function () {
+      elErr.innerHTML = "";
+      zone.innerHTML = '<div class="mlb-actions"><span>Vous confirmez l\'annulation ?</span>' +
+        '<button class="mlb-btn mlb-btn-small" data-oui type="button">Oui, annuler</button>' +
+        '<button class="mlb-link" data-non type="button">Non, garder mon rendez-vous</button></div>';
+      zone.querySelector("[data-non]").onclick = function () { zone.innerHTML = ""; };
+      zone.querySelector("[data-oui]").onclick = function (e) {
+        e.target.disabled = true;
+        appelApi("/rendez-vous/" + acces.id, avecJeton("DELETE")).then(function () {
+          elRdv.innerHTML = '<div class="mlb-confirm"><h3>Rendez-vous annulé</h3><p>Le créneau est libéré. À bientôt chez Maison Lumen.</p></div>';
+          acces = null;
+        }).catch(function (err) { e.target.disabled = false; elErr.innerHTML = texteErreur(err); });
+      };
+    };
+
+    elRdv.querySelector('[data-action="deplacer"]').onclick = function () {
+      elErr.innerHTML = "";
+      var demain = new Date(Date.now() + 24 * 3600 * 1000);
+      zone.innerHTML = '<div class="mlb-fields mlb-fields-2">' +
+        '<label class="mlb-label">Nouveau jour<input class="mlb-input" type="date" data-jour min="' + isoJour(demain) + '"></label>' +
+        '<label class="mlb-label">Nouveau créneau<select class="mlb-input" data-heure><option value="">Choisissez un jour</option></select></label></div>' +
+        '<div class="mlb-actions"><button class="mlb-btn mlb-btn-small" data-ok type="button">Valider le changement</button>' +
+        '<button class="mlb-link" data-non type="button">Annuler</button></div>';
+      var champJour = zone.querySelector("[data-jour]"), champHeure = zone.querySelector("[data-heure]");
+      champJour.onchange = function () {
+        champHeure.innerHTML = '<option value="">Chargement…</option>';
+        appelApi("/creneaux?jour=" + champJour.value).then(function (data) {
+          var liste = data.creneaux || [];
+          champHeure.innerHTML = liste.length
+            ? '<option value="">Choisissez</option>' + liste.map(function (h) { return '<option value="' + h + '">' + heureLisible(h) + "</option>"; }).join("")
+            : '<option value="">' + echapper(data.message || "Complet ce jour-là") + "</option>";
+        }).catch(function (err) { champHeure.innerHTML = '<option value="">Indisponible</option>'; elErr.innerHTML = texteErreur(err); });
+      };
+      zone.querySelector("[data-non]").onclick = function () { zone.innerHTML = ""; };
+      zone.querySelector("[data-ok]").onclick = function (e) {
+        if (!champJour.value || !champHeure.value) { elErr.textContent = "Choisissez un jour et un créneau."; return; }
+        e.target.disabled = true;
+        elErr.innerHTML = "";
+        appelApi("/rendez-vous/" + acces.id, avecJeton("PATCH", { debut: champJour.value + "T" + champHeure.value + ":00" }))
+          .then(function (rdv) { afficherRdv(rdv, "C'est noté : votre rendez-vous est déplacé."); })
+          .catch(function (err) { e.target.disabled = false; elErr.innerHTML = texteErreur(err); });
+      };
+    };
+  }
+
+  function reinitialiserGestion() {
+    acces = null;
+    elRdv.hidden = true;
+    elRdv.innerHTML = "";
+    formGerer.hidden = false;
+    formGerer.reset();
+  }
+
+  formGerer.addEventListener("submit", function (e) {
+    e.preventDefault();
+    elGererErreur.innerHTML = "";
+    var id = parseInt(formGerer.elements["rdv_id"].value, 10);
+    var jeton = formGerer.elements["jeton"].value.trim();
+    if (!id || !jeton) { elGererErreur.textContent = "Indiquez le numéro et le code de gestion."; return; }
+    var bouton = formGerer.querySelector("button");
+    bouton.disabled = true;
+    acces = { id: id, jeton: jeton };
+    Promise.all([appelApi("/rendez-vous/" + id, avecJeton("GET")), appelApi("/prestations")])
+      .then(function (res) {
+        res[1].forEach(function (p) { prestationsParId[p.id] = p; });
+        formGerer.hidden = true;
+        afficherRdv(res[0]);
+      })
+      .catch(function (err) {
+        acces = null;
+        elGererErreur.innerHTML = err.status === 404 ? "Aucun rendez-vous ne correspond à ce numéro et ce code. Vérifiez-les, ou appelez le salon." : texteErreur(err);
+      })
+      .finally(function () { bouton.disabled = false; });
+  });
+
+  // ---------- Démarrage ----------
+  if (new URLSearchParams(location.search).get("gerer") !== null) ouvrirOnglet("gerer");
+  // Lien de l'email : /reserver#gerer=12-CODE ouvre directement le rendez-vous
+  var lien = /^#gerer=(\d+)-(.+)$/.exec(location.hash);
+  if (lien) {
+    ouvrirOnglet("gerer");
+    formGerer.elements["rdv_id"].value = lien[1];
+    formGerer.elements["jeton"].value = decodeURIComponent(lien[2]);
+    // On efface le code de la barre d'adresse (historique, capture d'écran…)
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+    formGerer.dispatchEvent(new Event("submit", { cancelable: true }));
+  }
+  chargerPrestations();
+  afficherJours();
+})();
+</script>
