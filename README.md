@@ -12,6 +12,22 @@ L'API refuse un créneau déjà pris, et interdit de modifier un rendez-vous moi
 
 ---
 
+## 🌐 Démo en ligne : Maison Lumen
+
+> ⚠️ **Site de démonstration.** Maison Lumen est un salon de coiffure **fictif**, créé pour mon portfolio. Aucun rendez-vous pris sur le site n'est réel.
+
+- Site : [maison-lumen-c4b75a.webflow.io](https://maison-lumen-c4b75a.webflow.io)
+- Réservation : [/reserver](https://maison-lumen-c4b75a.webflow.io/reserver)
+- API en ligne : [rdv-api-awu1.onrender.com/docs](https://rdv-api-awu1.onrender.com/docs)
+
+L'API est hébergée sur l'offre gratuite de Render : elle s'endort après 15 minutes sans visite, la première réponse peut donc prendre jusqu'à une minute.
+
+### Un projet Python et un projet no-code, réunis
+
+Je voulais montrer qu'une API écrite à la main et un site construit en no-code peuvent former un vrai produit. D'un côté, cette API en Python avec FastAPI : elle calcule les créneaux libres, valide chaque réservation, refuse les doublons, applique la règle des 24 h, envoie les emails et protège les données des clientes. De l'autre, un site vitrine réalisé sur Webflow pour un salon fictif, Maison Lumen, à partir d'une inspiration Pinterest. Le lien entre les deux, c'est un module de réservation en JavaScript que j'ai intégré dans les pages Webflow : il interroge l'API en direct pour afficher les créneaux, envoie la réservation et affiche les messages d'erreur de l'API en français. Une deuxième page, l'espace salon, permet à l'administratrice de gérer le planning, les annulations et les prestations avec sa clé. Webflow s'occupe du design et de l'hébergement des pages, l'API (déployée sur Render) s'occupe de toute la logique. Ce projet m'a appris à faire dialoguer deux mondes : la rapidité du no-code pour l'interface, et la rigueur d'un back-end testé pour tout ce qui ne doit pas casser.
+
+---
+
 ## 🛠️ Technologies
 
 - **Python** : le langage
@@ -121,29 +137,76 @@ J'ai enregistré le projet avec Git, puis je l'ai publié sur GitHub.
 
 ## 📌 Les routes de l'API
 
-| Action | Méthode | Route |
-|---|---|---|
-| Voir les prestations | `GET` | `/prestations` |
-| Créer une prestation | `POST` | `/prestations` |
-| Voir les créneaux libres | `GET` | `/creneaux?jour=2026-10-20` |
-| Voir les rendez-vous | `GET` | `/rendez-vous` |
-| Voir un rendez-vous | `GET` | `/rendez-vous/{id}` |
-| Réserver | `POST` | `/rendez-vous` |
-| Déplacer | `PATCH` | `/rendez-vous/{id}` |
-| Annuler | `DELETE` | `/rendez-vous/{id}` |
+| Action                   | Méthode  | Route                       | Qui peut l'utiliser            |
+|--------------------------|----------|-----------------------------|--------------------------------|
+| Voir les prestations     | `GET`    | `/prestations`              | Tout le monde                  |
+| Créer une prestation     | `POST`   | `/prestations`              | 🔒 Le salon (clé admin)        |
+| Modifier une prestation  | `PATCH`  | `/prestations/{id}`         | 🔒 Le salon (clé admin)        |
+| Supprimer une prestation | `DELETE` | `/prestations/{id}`         | 🔒 Le salon (clé admin)        |
+| Voir les créneaux libres | `GET`    | `/creneaux?jour=2026-10-20` | Tout le monde                  |
+| Réserver                 | `POST`   | `/rendez-vous`              | Tout le monde (5 par heure)    |
+| Réserver pour un client  | `POST`   | `/salon/rendez-vous`        | 🔒 Le salon (sans limite)      |
+| Voir les rendez-vous     | `GET`    | `/rendez-vous?jour=` ou `?depuis=` | 🔒 Le salon (clé admin) |
+| Voir un rendez-vous      | `GET`    | `/rendez-vous/{id}`         | 🔑 Le client (jeton) ou le salon |
+| Déplacer                 | `PATCH`  | `/rendez-vous/{id}`         | 🔑 Le client (jeton) ou le salon |
+| Annuler                  | `DELETE` | `/rendez-vous/{id}`         | 🔑 Le client (jeton) ou le salon |
 
----
+* * *
 
 ## ⚠️ Les erreurs gérées
 
-| Code | Signification |
-|---|---|
-| **400** | Modification impossible moins de 24 h avant |
-| **404** | Rendez-vous ou prestation introuvable |
+| Code    | Signification                                      |
+|---------|----------------------------------------------------|
+| **400** | Modification impossible moins de 24 h avant        |
+| **401** | Clé admin manquante ou invalide                    |
+| **404** | Rendez-vous ou prestation introuvable (ou mauvais jeton) |
 | **409** | Créneau déjà réservé, ou prestation déjà existante |
-| **422** | Données invalides (email, téléphone, horaire…) |
+| **422** | Données invalides (email, téléphone, horaire…)     |
+| **429** | Trop de demandes depuis la même connexion          |
 
----
+Le salon (clé admin) peut déplacer ou annuler un rendez-vous même moins de 24 h avant : la règle des 24 h ne s'applique qu'aux clients.
+
+* * *
+
+## 🗓️ Espace salon
+
+Une page d'administration est intégrée au site Webflow ([/admin](https://maison-lumen-c4b75a.webflow.io/admin)). Elle ne contient aucun secret : le salon s'y connecte avec la clé admin, gardée seulement le temps de la session du navigateur. On peut y voir le planning jour par jour, déplacer ou annuler un rendez-vous, en ajouter un pris par téléphone, et gérer les prestations.
+
+* * *
+
+## 🔐 Sécurité
+
+L'API est appelée par un site public ([Maison Lumen](https://maison-lumen-c4b75a.webflow.io), sur Webflow). Tout ce qui est dans le site est visible par n'importe qui : la sécurité se fait **dans l'API**.
+
+### La clé admin
+
+- Les routes du salon (planning, annulations, prestations) demandent la **clé admin** dans l'en-tête `X-API-Key`.
+- Sa valeur est choisie par le salon dans la variable `ADMIN_API_KEY` sur Render : elle n'est jamais dans le code, ni sur GitHub, ni dans le site.
+- L'admin la tape sur l'écran de connexion de l'espace salon (`/admin`). Elle n'est gardée que le temps de l'onglet.
+- Sans clé configurée, les routes du salon sont fermées à tout le monde.
+
+### Les autres protections
+
+- **Jeton par rendez-vous** : à la réservation, l'API génère un code aléatoire renvoyé une seule fois au client (et dans son email). Pour voir, déplacer ou annuler son rendez-vous, il l'envoie dans `X-Jeton`. Un mauvais jeton renvoie 404, comme un rendez-vous inexistant.
+- **Critères d'annulation**, les mêmes pour le client et le salon : pas un rendez-vous passé, et au moins 24 h avant. Le salon doit en plus donner un **motif** (`demande_client`, `salon_indisponible`, `autre` + précision), repris dans l'email.
+- **Comparaisons à temps constant** (`secrets.compare_digest`) pour les clés et les jetons.
+- **Limite de requêtes** par adresse IP (`slowapi`) : 5 réservations par heure.
+- **Champ piège** anti-robots, réservations limitées à 60 jours à l'avance.
+- **CORS** limité au site du salon, **en-têtes de sécurité** sur chaque réponse.
+- **Validation Pydantic** et requêtes SQLModel paramétrées (pas d'injection SQL).
+- Deux réservations au même créneau à la même seconde : la contrainte d'unicité de la base garde la première (409).
+
+Tout est vérifié par les tests : `python -m pytest -v` (**47 tests**).
+
+* * *
+
+## ✉️ Emails au client
+
+Confirmation (avec le numéro, le code de gestion et un lien « Gérer mon rendez-vous »), déplacement et annulation (avec le motif si c'est le salon).
+
+L'offre gratuite de Render bloque le SMTP : l'API passe par un petit **relais Google Apps Script** ([`docs/relais-email.gs`](docs/relais-email.gs)) qui envoie depuis la boîte Gmail du salon. L'email part après la réponse : si l'envoi échoue, la réservation reste valide.
+
+* * *
 
 ## 📁 Organisation des fichiers
 
@@ -153,9 +216,16 @@ rdv_api/
 │   ├── creneaux.py   → calcul des créneaux
 │   ├── database.py   → connexion à la base de données
 │   ├── models.py     → données et règles de validation
+│   ├── securite.py   → jetons, limite de requêtes, CORS
+│   ├── cles.py       → vérification de la clé admin
+│   ├── emails.py     → emails de confirmation, déplacement, annulation
 │   └── main.py       → routes de l'API et gestion des erreurs
 ├── tests/
 │   └── test_api.py   → tests automatiques
+├── docs/
+│   └── relais-email.gs → relais Gmail (Google Apps Script)
+├── .env.example      → modèle des variables d'environnement
+├── render.yaml       → configuration du déploiement Render
 └── requirements.txt  → bibliothèques à installer
 ```
 
