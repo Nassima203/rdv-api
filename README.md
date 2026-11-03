@@ -160,32 +160,41 @@ Une page d'administration est intégrée au site Webflow ([/admin](https://maiso
 
 ## 🔐 Sécurité
 
-L'API est appelée par un site public ([Maison Lumen](https://maison-lumen-c4b75a.webflow.io), sur Webflow). Tout ce qui est dans le site est visible par n'importe qui, donc **toute la sécurité est côté API** :
+L'API est appelée par un site public ([Maison Lumen](https://maison-lumen-c4b75a.webflow.io), sur Webflow). Tout ce qui est dans le site est visible par n'importe qui : la sécurité se fait **dans l'API**.
 
-- **Clé admin** : les routes sensibles (liste des clients, création de prestations) demandent l'en-tête `X-API-Key`. La clé est une variable d'environnement (`ADMIN_API_KEY`), jamais dans le code, ni sur GitHub, ni dans le site. Si elle n'est pas configurée, ces routes sont fermées à tout le monde.
-- **Jeton par rendez-vous** : à la réservation, l'API génère un code aléatoire (`secrets.token_urlsafe`) renvoyé une seule fois au client. Pour voir, déplacer ou annuler son rendez-vous, il faut l'envoyer dans l'en-tête `X-Jeton`. Les numéros de rendez-vous se suivent, mais sans le jeton ils ne servent à rien. Un mauvais jeton renvoie 404, comme un rendez-vous inexistant, pour ne pas révéler quels numéros existent.
-- **Comparaisons à temps constant** (`secrets.compare_digest`) pour la clé et les jetons.
-- **Limite de requêtes** par adresse IP avec `slowapi` : 5 réservations par heure, 120 requêtes par minute pour le reste.
-- **Champ piège** (`site_web`) : caché sur le site, seuls les robots le remplissent, et leur demande est refusée.
-- **Réservations limitées à 60 jours** à l'avance, pour éviter qu'on bloque l'agenda sur des années.
-- **CORS** limité au site du salon, et **en-têtes de sécurité** (`nosniff`, `DENY`…) sur chaque réponse.
-- **Validation Pydantic** de toutes les entrées et requêtes SQLModel paramétrées (pas d'injection SQL).
+### Les clés APTX
 
-Ces protections sont vérifiées par les tests (`python -m pytest -v` : **34 tests**, dont 12 dédiés à la sécurité et 7 à l'espace salon).
+| Clé | Format | Où elle vit | Ce qu'elle permet |
+|---|---|---|---|
+| Publique du site | `APTX_pk_…` | Dans le code du site Webflow (en-tête `X-Cle-Site`) | Voir les prestations et les créneaux, réserver. Rien d'autre. |
+| Secrète du salon | `APTX_sk_…` | Tapée par l'admin sur `/admin` (en-tête `X-API-Key`), jamais dans le site | Tout : planning, annulations, prestations, clés. |
+| Clé de secours | libre | Variable `ADMIN_API_KEY` sur Render | Comme une clé secrète. Sert à la première connexion. |
 
-Dans `/docs`, les routes protégées ont un cadenas : bouton **Authorize**, puis la clé admin.
+- Les clés sont créées et révoquées depuis l'espace salon (`POST /cles`, `DELETE /cles/{id}`).
+- La clé complète n'est montrée **qu'une fois**, à sa création : la base n'en garde qu'une **empreinte SHA-256**.
+- Une clé publique ne donne aucun droit d'administration, et une clé secrète ne remplace pas la clé du site.
+- On ne peut pas révoquer la clé avec laquelle on est connecté.
+
+### Les autres protections
+
+- **Jeton par rendez-vous** : à la réservation, l'API génère un code aléatoire renvoyé une seule fois au client (et dans son email). Pour voir, déplacer ou annuler son rendez-vous, il l'envoie dans `X-Jeton`. Un mauvais jeton renvoie 404, comme un rendez-vous inexistant.
+- **Critères d'annulation**, les mêmes pour le client et le salon : pas un rendez-vous passé, et au moins 24 h avant. Le salon doit en plus donner un **motif** (`demande_client`, `salon_indisponible`, `autre` + précision), repris dans l'email.
+- **Comparaisons à temps constant** (`secrets.compare_digest`) pour les clés et les jetons.
+- **Limite de requêtes** par adresse IP (`slowapi`) : 5 réservations par heure.
+- **Champ piège** anti-robots, réservations limitées à 60 jours à l'avance.
+- **CORS** limité au site du salon, **en-têtes de sécurité** sur chaque réponse.
+- **Validation Pydantic** et requêtes SQLModel paramétrées (pas d'injection SQL).
+- Deux réservations au même créneau à la même seconde : la contrainte d'unicité de la base garde la première (409).
+
+Tout est vérifié par les tests : `python -m pytest -v` (**56 tests**).
 
 * * *
 
-## ☁️ Mise en ligne (Render)
+## ✉️ Emails au client
 
-1. Sur [render.com](https://render.com) : **New → Blueprint**, puis choisir ce dépôt. Le fichier `render.yaml` configure tout.
-2. Render génère `ADMIN_API_KEY` tout seul : la récupérer dans l'onglet **Environment** du service (ne jamais la partager).
-3. Ouvrir `https://<ton-service>.onrender.com/docs`, cliquer sur **Authorize**, coller la clé, puis créer les prestations avec `POST /prestations`.
+Confirmation (avec le numéro, le code de gestion et un lien « Gérer mon rendez-vous »), déplacement et annulation (avec le motif si c'est le salon).
 
-En local, copier `.env.example` en `.env` et remplir les valeurs.
-
-> Sur l'offre gratuite, le disque n'est pas persistant : la base SQLite repart à zéro à chaque redéploiement.
+L'offre gratuite de Render bloque le SMTP : l'API passe par un petit **relais Google Apps Script** ([`docs/relais-email.gs`](docs/relais-email.gs)) qui envoie depuis la boîte Gmail du salon. L'email part après la réponse : si l'envoi échoue, la réservation reste valide.
 
 * * *
 
@@ -197,10 +206,14 @@ rdv_api/
 │   ├── creneaux.py   → calcul des créneaux
 │   ├── database.py   → connexion à la base de données
 │   ├── models.py     → données et règles de validation
-│   ├── securite.py   → clé admin, jetons, limite de requêtes, CORS
+│   ├── securite.py   → jetons, limite de requêtes, CORS
+│   ├── cles.py       → clés d'accès APTX (publiques et secrètes)
+│   ├── emails.py     → emails de confirmation, déplacement, annulation
 │   └── main.py       → routes de l'API et gestion des erreurs
 ├── tests/
 │   └── test_api.py   → tests automatiques
+├── docs/
+│   └── relais-email.gs → relais Gmail (Google Apps Script)
 ├── .env.example      → modèle des variables d'environnement
 ├── render.yaml       → configuration du déploiement Render
 └── requirements.txt  → bibliothèques à installer

@@ -4,25 +4,34 @@ Lancer le serveur :  uvicorn app.main:app --reload
 Documentation      :  http://127.0.0.1:8000/docs
 
 Qui peut faire quoi ?
-- Tout le monde : voir les prestations, voir les créneaux libres, réserver.
+- Le site (avec sa clé publique APTX_pk_ dans X-Cle-Site) : voir les prestations et les créneaux, réserver.
 - Le client (avec le jeton reçu à la réservation) : voir, déplacer, annuler SON rendez-vous.
-- Le salon (avec la clé admin X-API-Key) : tout, y compris la liste des rendez-vous.
+- Le salon (avec une clé secrète APTX_sk_ dans X-API-Key) : tout, y compris les clés d'accès.
 """
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
+from enum import Enum
+
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Security, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.creneaux import creneaux_libres, est_jour_ouvre
-from app.database import creer_tables, get_session
+from app import emails
+from app.cles import empreinte, est_admin, generer_cle, verifier_admin, verifier_cle_site
+from app.database import DATABASE_URL, creer_tables, get_session
 from app.models import (
+    CleApi,
+    CleApiCreate,
+    CleApiCreee,
+    CleApiPublic,
     Prestation,
     PrestationCreate,
     PrestationModification,
@@ -38,11 +47,9 @@ from app.securite import (
     LIMITE_RESERVATION,
     ORIGINES_AUTORISEES,
     entete_cle_api,
-    est_admin,
     jeton_valide,
     limiter,
     lire_jeton,
-    verifier_admin,
 )
 
 DELAI_MODIFICATION = timedelta(hours=24)
@@ -58,9 +65,10 @@ app = FastAPI(
     title="API de prise de rendez-vous",
     description=(
         "Réservez, déplacez ou annulez un rendez-vous chez un professionnel.\n\n"
-        "Les routes marquées d'un cadenas demandent la clé admin (bouton **Authorize**)."
+        "Les routes du site demandent la clé publique du site (en-tête `X-Cle-Site`, APTX_pk_...). "
+        "Les routes marquées d'un cadenas demandent une clé secrète du salon (bouton **Authorize**, APTX_sk_...)."
     ),
-    version="1.2.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -76,7 +84,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ORIGINES_AUTORISEES,
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
-    allow_headers=["Content-Type", "X-Jeton", "X-API-Key"],
+    allow_headers=["Content-Type", "X-Jeton", "X-API-Key", "X-Cle-Site"],
 )
 
 
@@ -157,7 +165,7 @@ def rendez_vous_autorise(
     Même message d'erreur (404) qu'il existe ou non : on ne révèle pas quels numéros sont pris.
     """
     rdv = session.get(RendezVous, rdv_id)
-    if rdv is None or not (est_admin(cle_api) or jeton_valide(rdv.jeton, jeton)):
+    if rdv is None or not (est_admin(cle_api, session) or jeton_valide(rdv.jeton, jeton)):
         raise HTTPException(status_code=404, detail=f"Rendez-vous n°{rdv_id} introuvable.")
     return rdv
 
@@ -172,10 +180,14 @@ def verifier_creneau_disponible(debut: datetime, session: Session, ignorer_id: i
         )
 
 
-def verifier_delai_24h(rdv: RendezVous, admin: bool = False):
-    """La règle des 24 h protège le salon des annulations de dernière minute : elle ne s'applique pas au salon lui-même."""
-    if admin:
-        return
+def verifier_criteres_modification(rdv: RendezVous):
+    """
+    Critères d'annulation et de déplacement, les mêmes pour le client et pour le salon :
+    - un rendez-vous déjà passé ne peut plus être modifié ;
+    - un rendez-vous ne peut plus être modifié moins de 24 h avant.
+    """
+    if rdv.debut <= datetime.now():
+        raise HTTPException(status_code=400, detail="Ce rendez-vous est déjà passé : il ne peut plus être modifié.")
     if rdv.debut - datetime.now() < DELAI_MODIFICATION:
         raise HTTPException(
             status_code=400,
@@ -205,7 +217,8 @@ def creer_prestation(donnees: PrestationCreate, session: Session = Depends(get_s
     return prestation
 
 
-@app.get("/prestations", response_model=list[PrestationPublic], tags=["Prestations"])
+@app.get("/prestations", response_model=list[PrestationPublic], tags=["Prestations"],
+         dependencies=[Depends(verifier_cle_site)])
 def lister_prestations(session: Session = Depends(get_session)):
     return session.exec(select(Prestation).order_by(Prestation.id)).all()
 
@@ -253,7 +266,7 @@ def supprimer_prestation(prestation_id: int, session: Session = Depends(get_sess
 
 # ----- Créneaux -----
 
-@app.get("/creneaux", tags=["Créneaux"])
+@app.get("/creneaux", tags=["Créneaux"], dependencies=[Depends(verifier_cle_site)])
 def voir_creneaux_libres(jour: date, session: Session = Depends(get_session)):
     if not est_jour_ouvre(jour):
         return {"jour": jour, "message": "Le cabinet est fermé ce jour-là.", "creneaux": []}
@@ -269,29 +282,39 @@ def voir_creneaux_libres(jour: date, session: Session = Depends(get_session)):
 
 # ----- Rendez-vous -----
 
-def enregistrer_rendez_vous(donnees: RendezVousCreate, session: Session) -> RendezVous:
-    trouver_prestation(donnees.prestation_id, session)
+def enregistrer_rendez_vous(donnees: RendezVousCreate, session: Session, taches: BackgroundTasks) -> RendezVous:
+    prestation = trouver_prestation(donnees.prestation_id, session)
     verifier_creneau_disponible(donnees.debut, session)
     rdv = RendezVous.model_validate(donnees.model_dump(exclude={"site_web"}))
     session.add(rdv)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        # Deux personnes ont validé le même créneau à la même seconde : la base garde la première
+        session.rollback()
+        raise HTTPException(status_code=409, detail=f"Le créneau du {donnees.debut:%d/%m/%Y à %H:%M} est déjà réservé.")
     session.refresh(rdv)
+    # L'email part après la réponse : la réservation ne dépend jamais de l'envoi
+    taches.add_task(emails.envoyer, emails.message_confirmation(rdv, prestation))
     return rdv
 
 
-@app.post("/rendez-vous", response_model=RendezVousConfirmation, status_code=201, tags=["Rendez-vous"])
+@app.post("/rendez-vous", response_model=RendezVousConfirmation, status_code=201, tags=["Rendez-vous"],
+          dependencies=[Depends(verifier_cle_site)])
 @limiter.limit(LIMITE_RESERVATION)
-def reserver(request: Request, donnees: RendezVousCreate, session: Session = Depends(get_session)):
+def reserver(request: Request, donnees: RendezVousCreate, taches: BackgroundTasks,
+             session: Session = Depends(get_session)):
     if donnees.site_web:  # champ piège rempli : c'est un robot
         raise HTTPException(status_code=400, detail="Demande refusée.")
-    return enregistrer_rendez_vous(donnees, session)
+    return enregistrer_rendez_vous(donnees, session, taches)
 
 
 @app.post("/salon/rendez-vous", response_model=RendezVousConfirmation, status_code=201,
           tags=["Rendez-vous (salon)"], dependencies=[Depends(verifier_admin)])
-def reserver_pour_un_client(donnees: RendezVousCreate, session: Session = Depends(get_session)):
+def reserver_pour_un_client(donnees: RendezVousCreate, taches: BackgroundTasks,
+                            session: Session = Depends(get_session)):
     """Rendez-vous pris par le salon (au téléphone, au comptoir) : pas de limite de requêtes."""
-    return enregistrer_rendez_vous(donnees, session)
+    return enregistrer_rendez_vous(donnees, session, taches)
 
 
 @app.get("/rendez-vous", response_model=list[RendezVousPublic], tags=["Rendez-vous (salon)"],
@@ -309,29 +332,111 @@ def lister_rendez_vous(jour: date | None = None, depuis: date | None = None,
     return session.exec(requete).all()
 
 
-@app.get("/rendez-vous/{rdv_id}", response_model=RendezVousPublic, tags=["Rendez-vous"])
+@app.get("/rendez-vous/{rdv_id}", response_model=RendezVousPublic, tags=["Rendez-vous"],
+         dependencies=[Depends(verifier_cle_site)])
 def voir_rendez_vous(rdv: RendezVous = Depends(rendez_vous_autorise)):
     return rdv
 
 
-@app.patch("/rendez-vous/{rdv_id}", response_model=RendezVousPublic, tags=["Rendez-vous"])
-def deplacer_rendez_vous(donnees: RendezVousDeplacement,
+@app.patch("/rendez-vous/{rdv_id}", response_model=RendezVousPublic, tags=["Rendez-vous"],
+           dependencies=[Depends(verifier_cle_site)])
+def deplacer_rendez_vous(donnees: RendezVousDeplacement, taches: BackgroundTasks,
                          rdv: RendezVous = Depends(rendez_vous_autorise),
-                         session: Session = Depends(get_session),
-                         cle_api: str | None = Security(entete_cle_api)):
-    verifier_delai_24h(rdv, admin=est_admin(cle_api))
+                         session: Session = Depends(get_session)):
+    verifier_criteres_modification(rdv)
     verifier_creneau_disponible(donnees.debut, session, ignorer_id=rdv.id)
     rdv.debut = donnees.debut
     session.add(rdv)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail=f"Le créneau du {donnees.debut:%d/%m/%Y à %H:%M} est déjà réservé.")
     session.refresh(rdv)
+    taches.add_task(emails.envoyer, emails.message_deplacement(rdv, session.get(Prestation, rdv.prestation_id)))
     return rdv
 
 
-@app.delete("/rendez-vous/{rdv_id}", status_code=204, tags=["Rendez-vous"])
-def annuler_rendez_vous(rdv: RendezVous = Depends(rendez_vous_autorise),
+class MotifAnnulation(str, Enum):
+    demande_client = "demande_client"
+    salon_indisponible = "salon_indisponible"
+    autre = "autre"
+
+
+MOTIFS = {
+    MotifAnnulation.demande_client: "à la demande du client",
+    MotifAnnulation.salon_indisponible: "le salon n'est pas disponible à cet horaire",
+    MotifAnnulation.autre: "autre raison",
+}
+
+
+@app.delete("/rendez-vous/{rdv_id}", status_code=204, tags=["Rendez-vous"],
+            dependencies=[Depends(verifier_cle_site)])
+def annuler_rendez_vous(taches: BackgroundTasks,
+                        rdv: RendezVous = Depends(rendez_vous_autorise),
                         session: Session = Depends(get_session),
-                        cle_api: str | None = Security(entete_cle_api)):
-    verifier_delai_24h(rdv, admin=est_admin(cle_api))
+                        cle_api: str | None = Security(entete_cle_api),
+                        motif: MotifAnnulation | None = Query(default=None, description="Obligatoire pour le salon."),
+                        precision: str | None = Query(default=None, max_length=200)):
+    """
+    Mêmes critères pour le client et le salon : pas un rendez-vous passé, et au moins 24 h avant.
+    Le salon doit en plus donner un motif, repris dans l'email envoyé au client.
+    """
+    par_le_salon = est_admin(cle_api, session)
+    if par_le_salon and motif is None:
+        raise HTTPException(status_code=422, detail="Indiquez le motif de l'annulation.")
+    verifier_criteres_modification(rdv)
+    texte_motif = None
+    if par_le_salon:
+        texte_motif = MOTIFS[motif] + (f" : {precision.strip()}" if precision and precision.strip() else "")
+    message = emails.message_annulation(rdv, session.get(Prestation, rdv.prestation_id),
+                                        par_le_salon=par_le_salon, motif=texte_motif)
     session.delete(rdv)
     session.commit()
+    taches.add_task(emails.envoyer, message)
+
+
+# ----- Clés d'accès APTX (salon) -----
+
+@app.get("/cles", response_model=list[CleApiPublic], tags=["Clés d'accès (salon)"],
+         dependencies=[Depends(verifier_admin)])
+def lister_cles(session: Session = Depends(get_session)):
+    return session.exec(select(CleApi).order_by(CleApi.id)).all()
+
+
+@app.post("/cles", response_model=CleApiCreee, status_code=201, tags=["Clés d'accès (salon)"],
+          dependencies=[Depends(verifier_admin)])
+def creer_cle(donnees: CleApiCreate, session: Session = Depends(get_session)):
+    """La clé complète n'est renvoyée qu'ici, une seule fois : la base n'en garde qu'une empreinte."""
+    cle = generer_cle(donnees.type)
+    enregistree = CleApi(nom=donnees.nom, type=donnees.type, apercu=cle[:12] + "…", empreinte=empreinte(cle))
+    session.add(enregistree)
+    session.commit()
+    session.refresh(enregistree)
+    return CleApiCreee(**enregistree.model_dump(), cle=cle)
+
+
+@app.delete("/cles/{cle_id}", response_model=CleApiPublic, tags=["Clés d'accès (salon)"],
+            dependencies=[Depends(verifier_admin)])
+def revoquer_cle(cle_id: int, session: Session = Depends(get_session),
+                 cle_api: str | None = Security(entete_cle_api)):
+    cle = session.get(CleApi, cle_id)
+    if cle is None:
+        raise HTTPException(status_code=404, detail=f"Clé n°{cle_id} introuvable.")
+    if cle_api and cle.empreinte == empreinte(cle_api):
+        raise HTTPException(status_code=409, detail="Vous ne pouvez pas révoquer la clé avec laquelle vous êtes connecté.")
+    if cle.revoquee_le is None:
+        cle.revoquee_le = datetime.now()
+        session.add(cle)
+        session.commit()
+        session.refresh(cle)
+    return cle
+
+
+@app.get("/salon/etat", tags=["Clés d'accès (salon)"], dependencies=[Depends(verifier_admin)])
+def etat_du_service():
+    """Pour l'espace salon : savoir si les emails et la base de données sont bien configurés."""
+    return {
+        "emails": emails.relais_configure(),
+        "base": "sqlite" if DATABASE_URL.startswith("sqlite") else "postgres",
+    }

@@ -1,9 +1,8 @@
 """
 Tout ce qui protège l'API une fois en ligne.
 
-- Les routes ADMIN (lister les rendez-vous, créer une prestation...) demandent une clé
-  secrète envoyée dans l'en-tête X-API-Key. La clé vit dans une variable d'environnement,
-  jamais dans le code ni dans le site.
+- Les routes ADMIN demandent une clé secrète APTX_sk_ dans l'en-tête X-API-Key (voir app/cles.py).
+- Les routes du site demandent la clé publique APTX_pk_ dans l'en-tête X-Cle-Site.
 - Chaque rendez-vous reçoit un JETON aléatoire à sa création. Sans ce jeton (ou la clé
   admin), impossible de voir, déplacer ou annuler le rendez-vous de quelqu'un d'autre.
 - Une LIMITE DE REQUÊTES par adresse IP empêche un robot de réserver tout le planning.
@@ -13,7 +12,7 @@ import os
 import secrets
 
 from dotenv import load_dotenv
-from fastapi import Header, HTTPException, Security
+from fastapi import Header
 from fastapi.security import APIKeyHeader
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -22,11 +21,6 @@ from slowapi.util import get_remote_address
 # ---------- Configuration (variables d'environnement) ----------
 
 load_dotenv()  # en local : lit le fichier .env s'il existe (en production, Render fournit les variables)
-
-def cle_admin() -> str:
-    """Clé admin lue à chaque appel : pratique pour les tests et pour Render."""
-    return os.environ.get("ADMIN_API_KEY", "")
-
 
 ORIGINES_AUTORISEES = [
     origine.strip()
@@ -49,27 +43,14 @@ JOURS_RESERVABLES = int(os.environ.get("JOURS_RESERVABLES", "60"))
 limiter = Limiter(key_func=get_remote_address, default_limits=[LIMITE_PAR_DEFAUT])
 
 
-# ---------- Clé admin ----------
+# ---------- En-tête de la clé secrète du salon ----------
+# (la vérification elle-même est dans app/cles.py, car elle a besoin de la base)
 
 entete_cle_api = APIKeyHeader(
     name="X-API-Key",
     auto_error=False,
-    description="Clé réservée au salon (variable d'environnement ADMIN_API_KEY).",
+    description="Clé secrète du salon (APTX_sk_...), ou la clé de secours ADMIN_API_KEY.",
 )
-
-
-def est_admin(cle_recue: str | None) -> bool:
-    cle = cle_admin()
-    # Sans clé configurée, personne n'est admin : on ferme par défaut.
-    if not cle or not cle_recue:
-        return False
-    return secrets.compare_digest(cle_recue, cle)
-
-
-def verifier_admin(cle_recue: str | None = Security(entete_cle_api)) -> None:
-    """Dépendance FastAPI à ajouter sur les routes réservées au salon."""
-    if not est_admin(cle_recue):
-        raise HTTPException(status_code=401, detail="Accès réservé au salon : clé API manquante ou invalide.")
 
 
 # ---------- Jeton d'un rendez-vous ----------

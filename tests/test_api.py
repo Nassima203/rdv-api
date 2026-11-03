@@ -13,10 +13,12 @@ from sqlmodel.pool import StaticPool
 from app.database import get_session
 from app.main import app
 from app.models import RendezVous
+from app import emails
 from app.securite import limiter
 
 CLE_ADMIN = "cle-de-test-tres-secrete"
 ADMIN = {"X-API-Key": CLE_ADMIN}
+SALON_ANNULE = {"motif": "demande_client"}
 
 
 @pytest.fixture(name="session")
@@ -28,8 +30,16 @@ def session_fixture():
         yield session
 
 
+@pytest.fixture(name="envoyes")
+def envoyes_fixture(monkeypatch):
+    """Remplace l'envoi réel par une liste : on vérifie les emails sans rien envoyer."""
+    liste = []
+    monkeypatch.setattr(emails, "envoyer", lambda message: liste.append(message))
+    return liste
+
+
 @pytest.fixture(name="client")
-def client_fixture(session, monkeypatch):
+def client_fixture(session, monkeypatch, envoyes):
     monkeypatch.setenv("ADMIN_API_KEY", CLE_ADMIN)
     limiter.enabled = False  # la limite de requêtes a son propre test
     limiter.reset()
@@ -38,7 +48,9 @@ def client_fixture(session, monkeypatch):
         yield session
 
     app.dependency_overrides[get_session] = get_session_test
-    yield TestClient(app)
+    # Le site envoie sa clé publique à chaque appel : on fait pareil dans les tests
+    cle_site = TestClient(app).post("/cles", json={"nom": "Site de test", "type": "publique"}, headers=ADMIN).json()["cle"]
+    yield TestClient(app, headers={"X-Cle-Site": cle_site})
     app.dependency_overrides.clear()
     limiter.enabled = True
 
@@ -167,7 +179,7 @@ def test_impossible_de_lire_le_rendez_vous_d_un_autre(client):
 
 def test_admin_peut_annuler_sans_jeton(client):
     rdv = reserver(client)
-    assert client.delete(f"/rendez-vous/{rdv['id']}", headers=ADMIN).status_code == 204
+    assert client.delete(f"/rendez-vous/{rdv['id']}", headers=ADMIN, params=SALON_ANNULE).status_code == 204
 
 
 def test_champ_piege_bloque_les_robots(client):
@@ -293,7 +305,7 @@ def test_422_email_et_telephone_invalides(client):
 
 # ---------- Espace salon ----------
 
-def test_salon_annule_moins_de_24h_avant(client, session):
+def test_salon_respecte_aussi_les_24h(client, session):
     pid = creer_prestation(client)
     rdv = RendezVous(prestation_id=pid, client_nom="Test", client_email="t@example.com",
                      client_telephone="0612345678",
@@ -301,7 +313,9 @@ def test_salon_annule_moins_de_24h_avant(client, session):
     session.add(rdv)
     session.commit()
     session.refresh(rdv)
-    assert client.delete(f"/rendez-vous/{rdv.id}", headers=ADMIN).status_code == 204
+    rep = client.delete(f"/rendez-vous/{rdv.id}", headers=ADMIN, params=SALON_ANNULE)
+    assert rep.status_code == 400
+    assert "24 h" in rep.json()["erreur"]
 
 
 def test_salon_deplace_un_rendez_vous(client):
@@ -344,3 +358,177 @@ def test_impossible_de_supprimer_une_prestation_reservee(client):
     rdv = reserver(client)
     rep = client.delete(f"/prestations/{rdv['prestation_id']}", headers=ADMIN)
     assert rep.status_code == 409
+
+
+def test_salon_ne_peut_pas_annuler_un_rendez_vous_passe(client, session):
+    pid = creer_prestation(client)
+    rdv = RendezVous(prestation_id=pid, client_nom="Test", client_email="t@example.com",
+                     client_telephone="0612345678",
+                     debut=datetime.now().replace(second=0, microsecond=0) - timedelta(hours=3))
+    session.add(rdv)
+    session.commit()
+    session.refresh(rdv)
+    rep = client.delete(f"/rendez-vous/{rdv.id}", headers=ADMIN, params=SALON_ANNULE)
+    assert rep.status_code == 400
+    assert "déjà passé" in rep.json()["erreur"]
+
+
+# ---------- Emails ----------
+
+def test_email_de_confirmation_envoye(client, envoyes):
+    rdv = reserver(client)
+    assert len(envoyes) == 1
+    message = envoyes[0]
+    assert message["to"] == "sarah@example.com"
+    assert "confirmé" in message["subject"]
+    assert rdv["jeton"] in message["html"]
+    assert f"/reserver#gerer={rdv['id']}-{rdv['jeton']}" in message["html"]
+
+
+def test_email_d_annulation_par_le_salon(client, envoyes):
+    rdv = reserver(client)
+    client.delete(f"/rendez-vous/{rdv['id']}", headers=ADMIN, params=SALON_ANNULE)
+    assert "annulé" in envoyes[-1]["subject"]
+    assert "Le salon a annulé" in envoyes[-1]["html"]
+
+
+def test_email_d_annulation_par_le_client(client, envoyes):
+    rdv = reserver(client)
+    client.delete(f"/rendez-vous/{rdv['id']}", headers={"X-Jeton": rdv["jeton"]})
+    assert "Vous avez annulé" in envoyes[-1]["html"]
+
+
+def test_email_de_deplacement(client, envoyes):
+    rdv = reserver(client)
+    client.patch(f"/rendez-vous/{rdv['id']}", json={"debut": creneau(15)}, headers={"X-Jeton": rdv["jeton"]})
+    assert "déplacé" in envoyes[-1]["subject"]
+
+
+def test_pas_d_email_si_la_reservation_echoue(client, envoyes):
+    pid = creer_prestation(client)
+    client.post("/rendez-vous", json=donnees_rdv(pid, creneau(10)))
+    client.post("/rendez-vous", json=donnees_rdv(pid, creneau(10)))  # 409
+    assert len(envoyes) == 1
+
+
+def test_le_nom_du_client_est_echappe_dans_l_email(client, envoyes):
+    pid = creer_prestation(client)
+    donnees = donnees_rdv(pid, creneau(10))
+    donnees["client_nom"] = "<script>alert(1)</script>"
+    client.post("/rendez-vous", json=donnees)
+    assert "<script>" not in envoyes[0]["html"]
+
+
+def test_sans_relais_l_envoi_est_ignore_sans_erreur(monkeypatch):
+    monkeypatch.delenv("MAIL_RELAY_URL", raising=False)
+    from importlib import reload
+    import app.emails as module
+    assert reload(module).envoyer({"to": "a@example.com", "subject": "s", "html": "h"}) is False
+
+
+def test_adresse_postgres_de_render_convertie(monkeypatch):
+    from app.database import adresse_base
+    monkeypatch.setenv("DATABASE_URL", "postgres://u:p@hote:5432/base")
+    assert adresse_base() == "postgresql+psycopg://u:p@hote:5432/base"
+    monkeypatch.delenv("DATABASE_URL")
+    assert adresse_base() == "sqlite:///rdv.db"
+
+
+
+# ---------- Clés d'accès APTX ----------
+
+def test_401_sans_cle_du_site(client):
+    nu = TestClient(app)  # pas de clé publique
+    rep = nu.get("/prestations")
+    assert rep.status_code == 401
+    assert "Clé du site" in rep.json()["erreur"]
+    assert nu.get("/creneaux", params={"jour": prochain_jour_ouvre().isoformat()}).status_code == 401
+
+
+def test_une_cle_secrete_ne_remplace_pas_la_cle_du_site_et_inversement(client):
+    secrete = client.post("/cles", json={"nom": "Admin", "type": "secrete"}, headers=ADMIN).json()["cle"]
+    publique = client.post("/cles", json={"nom": "Site 2", "type": "publique"}, headers=ADMIN).json()["cle"]
+    nu = TestClient(app)
+    # la clé publique dans l'en-tête admin ne donne aucun droit
+    assert nu.get("/rendez-vous", headers={"X-API-Key": publique}).status_code == 401
+    # la clé secrète mise à la place de la clé du site ne marche pas non plus
+    assert nu.get("/prestations", headers={"X-Cle-Site": secrete}).status_code == 401
+    # mais l'espace salon peut lire les routes du site avec sa clé secrète
+    assert nu.get("/prestations", headers={"X-API-Key": secrete}).status_code == 200
+
+
+def test_creer_une_cle_aptx(client):
+    rep = client.post("/cles", json={"nom": "Site Webflow", "type": "publique"}, headers=ADMIN)
+    assert rep.status_code == 201
+    cle = rep.json()["cle"]
+    assert cle.startswith("APTX_pk_") and len(cle) > 30
+    secrete = client.post("/cles", json={"nom": "Ordinateur du salon", "type": "secrete"}, headers=ADMIN).json()["cle"]
+    assert secrete.startswith("APTX_sk_")
+
+
+def test_la_cle_complete_n_est_jamais_relue(client, session):
+    cle = client.post("/cles", json={"nom": "Admin", "type": "secrete"}, headers=ADMIN).json()["cle"]
+    liste = client.get("/cles", headers=ADMIN).json()
+    assert all("cle" not in c for c in liste)
+    assert cle not in str(liste)
+    # la base ne garde qu'une empreinte
+    from app.models import CleApi
+    from sqlmodel import select
+    assert all(c.empreinte != cle and len(c.empreinte) == 64 for c in session.exec(select(CleApi)).all())
+
+
+def test_une_cle_secrete_creee_donne_acces_au_salon(client):
+    secrete = client.post("/cles", json={"nom": "Admin", "type": "secrete"}, headers=ADMIN).json()["cle"]
+    assert client.get("/rendez-vous", headers={"X-API-Key": secrete}).status_code == 200
+
+
+def test_revoquer_une_cle(client):
+    cree = client.post("/cles", json={"nom": "Ancienne", "type": "secrete"}, headers=ADMIN).json()
+    assert client.delete(f"/cles/{cree['id']}", headers=ADMIN).json()["revoquee_le"] is not None
+    assert client.get("/rendez-vous", headers={"X-API-Key": cree["cle"]}).status_code == 401
+
+
+def test_impossible_de_revoquer_sa_propre_cle(client):
+    cree = client.post("/cles", json={"nom": "Moi", "type": "secrete"}, headers=ADMIN).json()
+    rep = client.delete(f"/cles/{cree['id']}", headers={"X-API-Key": cree["cle"]})
+    assert rep.status_code == 409
+
+
+def test_gerer_les_cles_demande_une_cle_secrete(client):
+    assert client.get("/cles").status_code == 401
+    assert client.post("/cles", json={"nom": "Pirate", "type": "secrete"}).status_code == 401
+
+
+def test_422_type_de_cle_invalide(client):
+    rep = client.post("/cles", json={"nom": "X", "type": "magique"}, headers=ADMIN)
+    assert rep.status_code == 422
+
+
+# ---------- Annulation par le salon : motif ----------
+
+def test_le_salon_doit_donner_un_motif(client):
+    rdv = reserver(client)
+    rep = client.delete(f"/rendez-vous/{rdv['id']}", headers=ADMIN)
+    assert rep.status_code == 422
+    assert "motif" in rep.json()["erreur"]
+
+
+def test_le_motif_est_dans_l_email(client, envoyes):
+    rdv = reserver(client)
+    rep = client.delete(f"/rendez-vous/{rdv['id']}", headers=ADMIN,
+                        params={"motif": "salon_indisponible", "precision": "formation de l'équipe"})
+    assert rep.status_code == 204
+    assert "pas disponible" in envoyes[-1]["html"]
+    assert "formation de l&#x27;équipe" in envoyes[-1]["html"]
+
+
+def test_motif_inconnu_refuse(client):
+    rdv = reserver(client)
+    rep = client.delete(f"/rendez-vous/{rdv['id']}", headers=ADMIN, params={"motif": "parce_que"})
+    assert rep.status_code == 422
+
+
+def test_etat_du_service(client):
+    rep = client.get("/salon/etat", headers=ADMIN)
+    assert rep.json() == {"emails": False, "base": "sqlite"}
+    assert client.get("/salon/etat").status_code == 401
