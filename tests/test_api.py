@@ -468,7 +468,7 @@ def test_etat_du_service(client):
 def test_prestations_par_defaut_si_liste_vide(session, monkeypatch):
     from app.main import ajouter_prestations_par_defaut
     monkeypatch.delenv("PRESTATIONS_PAR_DEFAUT", raising=False)
-    assert ajouter_prestations_par_defaut(session) == 4
+    assert ajouter_prestations_par_defaut(session) == 3
     assert ajouter_prestations_par_defaut(session) == 0  # pas de doublon au redémarrage
 
 

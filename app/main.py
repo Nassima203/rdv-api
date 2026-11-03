@@ -52,13 +52,12 @@ from app.securite import (
 DELAI_MODIFICATION = timedelta(hours=24)
 
 # Prestations du salon créées au démarrage si la liste est vide (site jamais vide pour les clientes).
-# Les noms reprennent les mots des cartes de l'accueil (?prestation=coupe, brushing, coloration).
+# Les noms reprennent les cartes de l'accueil (?prestation=coupe, mise en forme, coloration).
 # Pour désactiver : variable d'environnement PRESTATIONS_PAR_DEFAUT=0
 PRESTATIONS_PAR_DEFAUT = [
     {"nom": "Coupe & brushing", "prix": 45, "description": "Shampooing, coupe et brushing"},
-    {"nom": "Brushing", "prix": 28, "description": "Mise en forme sur cheveux lavés"},
+    {"nom": "Brushing & mise en forme", "prix": 30, "description": "Brushing, boucles ou lissage sur cheveux lavés"},
     {"nom": "Coloration", "prix": 65, "description": "Couleur racines ou complète, avec soin"},
-    {"nom": "Soin profond", "prix": 35, "description": "Diagnostic et soin adapté à vos cheveux"},
 ]
 
 
