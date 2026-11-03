@@ -12,6 +12,22 @@ L'API refuse un créneau déjà pris, et interdit de modifier un rendez-vous moi
 
 ---
 
+## 🌐 Démo en ligne : Maison Lumen
+
+> ⚠️ **Site de démonstration.** Maison Lumen est un salon de coiffure **fictif**, créé pour mon portfolio. Aucun rendez-vous pris sur le site n'est réel.
+
+- Site : [maison-lumen-c4b75a.webflow.io](https://maison-lumen-c4b75a.webflow.io)
+- Réservation : [/reserver](https://maison-lumen-c4b75a.webflow.io/reserver)
+- API en ligne : [rdv-api-awu1.onrender.com/docs](https://rdv-api-awu1.onrender.com/docs)
+
+L'API est hébergée sur l'offre gratuite de Render : elle s'endort après 15 minutes sans visite, la première réponse peut donc prendre jusqu'à une minute.
+
+### Un projet Python et un projet no-code, réunis
+
+Je voulais montrer qu'une API écrite à la main et un site construit en no-code peuvent former un vrai produit. D'un côté, cette API en Python avec FastAPI : elle calcule les créneaux libres, valide chaque réservation, refuse les doublons, applique la règle des 24 h, envoie les emails et protège les données des clientes. De l'autre, un site vitrine réalisé sur Webflow pour un salon fictif, Maison Lumen, à partir d'une inspiration Pinterest. Le lien entre les deux, c'est un module de réservation en JavaScript que j'ai intégré dans les pages Webflow : il interroge l'API en direct pour afficher les créneaux, envoie la réservation et affiche les messages d'erreur de l'API en français. Une deuxième page, l'espace salon, permet à l'administratrice de gérer le planning, les annulations et les prestations avec sa clé. Webflow s'occupe du design et de l'hébergement des pages, l'API (déployée sur Render) s'occupe de toute la logique. Ce projet m'a appris à faire dialoguer deux mondes : la rapidité du no-code pour l'interface, et la rigueur d'un back-end testé pour tout ce qui ne doit pas casser.
+
+---
+
 ## 🛠️ Technologies
 
 - **Python** : le langage
