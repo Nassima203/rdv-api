@@ -8,6 +8,7 @@ Qui peut faire quoi ?
 - Le client (avec le jeton reçu à la réservation) : voir, déplacer, annuler SON rendez-vous.
 - Le salon (avec la clé admin X-API-Key) : tout, y compris la liste des rendez-vous.
 """
+import os
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 
@@ -26,7 +27,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.creneaux import creneaux_libres, est_jour_ouvre
 from app import emails
 from app.cles import est_admin, verifier_admin
-from app.database import DATABASE_URL, creer_tables, get_session
+from app.database import DATABASE_URL, creer_tables, engine, get_session
 from app.models import (
     Prestation,
     PrestationCreate,
@@ -50,10 +51,33 @@ from app.securite import (
 
 DELAI_MODIFICATION = timedelta(hours=24)
 
+# Prestations du salon créées au démarrage si la liste est vide (site jamais vide pour les clientes).
+# Les noms reprennent les mots des cartes de l'accueil (?prestation=coupe, brushing, coloration).
+# Pour désactiver : variable d'environnement PRESTATIONS_PAR_DEFAUT=0
+PRESTATIONS_PAR_DEFAUT = [
+    {"nom": "Coupe & brushing", "prix": 45, "description": "Shampooing, coupe et brushing"},
+    {"nom": "Brushing", "prix": 28, "description": "Mise en forme sur cheveux lavés"},
+    {"nom": "Coloration", "prix": 65, "description": "Couleur racines ou complète, avec soin"},
+    {"nom": "Soin profond", "prix": 35, "description": "Diagnostic et soin adapté à vos cheveux"},
+]
+
+
+def ajouter_prestations_par_defaut(session: Session) -> int:
+    if os.environ.get("PRESTATIONS_PAR_DEFAUT", "1") == "0":
+        return 0
+    if session.exec(select(Prestation)).first() is not None:
+        return 0  # le salon a déjà ses prestations : on n'y touche pas
+    for donnees in PRESTATIONS_PAR_DEFAUT:
+        session.add(Prestation(**donnees))
+    session.commit()
+    return len(PRESTATIONS_PAR_DEFAUT)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     creer_tables()  # au démarrage du serveur
+    with Session(engine) as session:
+        ajouter_prestations_par_defaut(session)
     yield
 
 

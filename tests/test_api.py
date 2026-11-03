@@ -461,3 +461,25 @@ def test_etat_du_service(client):
     rep = client.get("/salon/etat", headers=ADMIN)
     assert rep.json() == {"emails": False, "base": "sqlite"}
     assert client.get("/salon/etat").status_code == 401
+
+
+# ---------- Prestations par défaut ----------
+
+def test_prestations_par_defaut_si_liste_vide(session, monkeypatch):
+    from app.main import ajouter_prestations_par_defaut
+    monkeypatch.delenv("PRESTATIONS_PAR_DEFAUT", raising=False)
+    assert ajouter_prestations_par_defaut(session) == 4
+    assert ajouter_prestations_par_defaut(session) == 0  # pas de doublon au redémarrage
+
+
+def test_prestations_par_defaut_respecte_celles_du_salon(client, session):
+    from app.main import ajouter_prestations_par_defaut
+    creer_prestation(client)
+    assert ajouter_prestations_par_defaut(session) == 0
+    assert [p["nom"] for p in client.get("/prestations").json()] == ["Coupe femme"]
+
+
+def test_prestations_par_defaut_desactivables(session, monkeypatch):
+    from app.main import ajouter_prestations_par_defaut
+    monkeypatch.setenv("PRESTATIONS_PAR_DEFAUT", "0")
+    assert ajouter_prestations_par_defaut(session) == 0
