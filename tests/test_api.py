@@ -483,3 +483,19 @@ def test_prestations_par_defaut_desactivables(session, monkeypatch):
     from app.main import ajouter_prestations_par_defaut
     monkeypatch.setenv("PRESTATIONS_PAR_DEFAUT", "0")
     assert ajouter_prestations_par_defaut(session) == 0
+
+
+def test_reserver_sans_prestation(client, envoyes):
+    """La prestation est facultative : on réserve juste un créneau."""
+    donnees = donnees_rdv(0, creneau(15))
+    del donnees["prestation_id"]
+    rep = client.post("/rendez-vous", json=donnees)
+    assert rep.status_code == 201
+    rdv = rep.json()
+    assert rdv["prestation_id"] is None
+    # Déplacer puis annuler fonctionne aussi sans prestation
+    jeton = {"X-Jeton": rdv["jeton"]}
+    assert client.patch(f"/rendez-vous/{rdv['id']}", json={"debut": creneau(16)}, headers=jeton).status_code == 200
+    assert client.delete(f"/rendez-vous/{rdv['id']}", headers=jeton).status_code == 204
+    assert len(envoyes) == 3
+    assert "Nous vous attendons le" in envoyes[0]["html"]

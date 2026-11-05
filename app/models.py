@@ -65,7 +65,8 @@ def valider_horaire(debut: datetime) -> datetime:
 # ---------- Rendez-vous ----------
 
 class RendezVousBase(SQLModel):
-    prestation_id: int = Field(foreign_key="prestation.id")
+    # Facultatif : on peut réserver un créneau sans choisir de prestation
+    prestation_id: Optional[int] = Field(default=None, foreign_key="prestation.id")
     client_nom: str = Field(min_length=2, max_length=100)
     client_email: EmailStr
     client_telephone: str = Field(description="Numéro français, ex : 06 12 34 56 78")

@@ -72,8 +72,9 @@ def message_confirmation(rdv, prestation) -> dict:
         "html": gabarit(
             f"C'est confirmé, {prenom}",
             [
-                f"Nous vous attendons le <strong>{quand}</strong> pour : "
-                f"<strong>{html.escape(prestation.nom)}</strong> ({format_prix(prestation.prix)}).",
+                (f"Nous vous attendons le <strong>{quand}</strong> pour : "
+                 f"<strong>{html.escape(prestation.nom)}</strong> ({format_prix(prestation.prix)}).")
+                if prestation else f"Nous vous attendons le <strong>{quand}</strong>.",
                 f"Rendez-vous n°{rdv.id}. Votre code de gestion : "
                 f'<span style="font-family:Courier New,monospace;background:#f5f1ec;padding:3px 6px;border-radius:6px">{html.escape(rdv.jeton)}</span>',
                 "Vous pouvez déplacer ou annuler votre rendez-vous en ligne jusqu'à 24 h avant. "
@@ -92,7 +93,7 @@ def message_deplacement(rdv, prestation) -> dict:
         "html": gabarit(
             "Votre rendez-vous est déplacé",
             [
-                f"Nouvel horaire : <strong>{quand}</strong>, pour {html.escape(prestation.nom) if prestation else 'votre prestation'}.",
+                f"Nouvel horaire : <strong>{quand}</strong>" + (f", pour {html.escape(prestation.nom)}" if prestation else "") + ".",
                 f"Rendez-vous n°{rdv.id}. Votre code de gestion reste le même.",
             ],
             ("Gérer mon rendez-vous", lien_gestion(rdv.id, rdv.jeton)),
