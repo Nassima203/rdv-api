@@ -299,8 +299,12 @@ def voir_creneaux_libres(jour: date, session: Session = Depends(get_session)):
 
 # ----- Rendez-vous -----
 
+def prestation_du(rdv: RendezVous, session: Session) -> Prestation | None:
+    return session.get(Prestation, rdv.prestation_id) if rdv.prestation_id else None
+
+
 def enregistrer_rendez_vous(donnees: RendezVousCreate, session: Session, taches: BackgroundTasks) -> RendezVous:
-    prestation = trouver_prestation(donnees.prestation_id, session)
+    prestation = trouver_prestation(donnees.prestation_id, session) if donnees.prestation_id else None
     verifier_creneau_disponible(donnees.debut, session)
     rdv = RendezVous.model_validate(donnees.model_dump(exclude={"site_web"}))
     session.add(rdv)
@@ -367,7 +371,7 @@ def deplacer_rendez_vous(donnees: RendezVousDeplacement, taches: BackgroundTasks
         session.rollback()
         raise HTTPException(status_code=409, detail=f"Le créneau du {donnees.debut:%d/%m/%Y à %H:%M} est déjà réservé.")
     session.refresh(rdv)
-    taches.add_task(emails.envoyer, emails.message_deplacement(rdv, session.get(Prestation, rdv.prestation_id)))
+    taches.add_task(emails.envoyer, emails.message_deplacement(rdv, prestation_du(rdv, session)))
     return rdv
 
 
@@ -402,7 +406,7 @@ def annuler_rendez_vous(taches: BackgroundTasks,
     texte_motif = None
     if par_le_salon:
         texte_motif = MOTIFS[motif] + (f" : {precision.strip()}" if precision and precision.strip() else "")
-    message = emails.message_annulation(rdv, session.get(Prestation, rdv.prestation_id),
+    message = emails.message_annulation(rdv, prestation_du(rdv, session),
                                         par_le_salon=par_le_salon, motif=texte_motif)
     session.delete(rdv)
     session.commit()

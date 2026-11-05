@@ -7,22 +7,17 @@
   <!-- ===== Prendre rendez-vous ===== -->
   <div class="mlb-onglet" data-onglet="reserver">
     <div class="mlb-step">
-      <p class="mlb-step-title"><span class="mlb-num">1</span> Choisissez une prestation</p>
-      <div id="mlb-prestations" class="mlb-chips"><p class="mlb-muted">Chargement des prestations…</p></div>
-    </div>
-
-    <div class="mlb-step">
-      <p class="mlb-step-title"><span class="mlb-num">2</span> Choisissez un jour</p>
+      <p class="mlb-step-title"><span class="mlb-num">1</span> Choisissez un jour</p>
       <div id="mlb-jours" class="mlb-days"></div>
     </div>
 
     <div class="mlb-step">
-      <p class="mlb-step-title"><span class="mlb-num">3</span> Choisissez un créneau</p>
+      <p class="mlb-step-title"><span class="mlb-num">2</span> Choisissez un créneau</p>
       <div id="mlb-creneaux" class="mlb-slots"><p class="mlb-muted">Sélectionnez d'abord un jour.</p></div>
     </div>
 
     <form id="mlb-form" class="mlb-step" novalidate>
-      <p class="mlb-step-title"><span class="mlb-num">4</span> Vos coordonnées</p>
+      <p class="mlb-step-title"><span class="mlb-num">3</span> Vos coordonnées</p>
       <div class="mlb-fields">
         <label class="mlb-label">Nom et prénom
           <input class="mlb-input" name="client_nom" type="text" autocomplete="name" placeholder="Camille Martin" required>
@@ -41,7 +36,7 @@
       <p id="mlb-recap" class="mlb-recap"></p>
       <div id="mlb-erreur" class="mlb-error" role="alert"></div>
       <button id="mlb-submit" class="mlb-submit" type="submit" disabled>Confirmer le rendez-vous</button>
-      <p id="mlb-manque" class="mlb-manque">Pour confirmer, choisissez une prestation, un jour et un créneau.</p>
+      <p id="mlb-manque" class="mlb-manque">Pour confirmer, choisissez un jour et un créneau.</p>
       <p class="mlb-rgpd">Vos coordonnées servent uniquement à gérer votre rendez-vous. Elles ne sont ni revendues ni utilisées pour de la publicité.</p>
     </form>
 
@@ -134,11 +129,11 @@
   var API_URL = "https://rdv-api-awu1.onrender.com";
 
   var JOURS_AFFICHES = 14;
-  var etat = { prestation: null, jour: null, heure: null };
+  var etat = { jour: null, heure: null };
   var racine = document.getElementById("ml-booking");
   var $ = function (id) { return document.getElementById(id); };
 
-  var elPrestations = $("mlb-prestations"), elJours = $("mlb-jours"), elCreneaux = $("mlb-creneaux");
+  var elJours = $("mlb-jours"), elCreneaux = $("mlb-creneaux");
   var form = $("mlb-form"), elRecap = $("mlb-recap"), elErreur = $("mlb-erreur"), btn = $("mlb-submit"), elConfirmation = $("mlb-confirmation");
 
   // ---------- Outils ----------
@@ -151,7 +146,6 @@
   }
   function heureLisible(h) { return h.replace(":", " h "); }
   function echapper(t) { var d = document.createElement("div"); d.textContent = t == null ? "" : String(t); return d.innerHTML; }
-  function sansAccents(t) { return String(t).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""); }
 
   function appelApi(chemin, options) {
     options = options || {};
@@ -196,40 +190,19 @@
 
   // =============== PRENDRE RENDEZ-VOUS ===============
   function majRecap() {
-    var ok = etat.prestation && etat.jour && etat.heure;
+    var ok = etat.jour && etat.heure;
     btn.disabled = !ok;
     // On dit à la cliente ce qui manque, au lieu d'un bouton gris sans explication
     var manque = [];
-    if (!etat.prestation) manque.push("une prestation");
     if (!etat.jour) manque.push("un jour");
     if (!etat.heure) manque.push("un créneau");
     var elManque = $("mlb-manque");
     elManque.hidden = ok;
     if (!ok) elManque.textContent = "Pour confirmer, choisissez encore " + (manque.length > 1 ? manque.slice(0, -1).join(", ") + " et " + manque[manque.length - 1] : manque[0]) + ".";
-    elRecap.textContent = ok ? etat.prestation.nom + " · " + dateLongue(etat.jour) + " à " + heureLisible(etat.heure) + " · " + prix(etat.prestation.prix) : "";
+    elRecap.textContent = ok ? dateLongue(etat.jour) + " à " + heureLisible(etat.heure) : "";
   }
 
-  // 1. Prestations (?prestation=coupe dans l'adresse présélectionne la prestation)
-  function chargerPrestations() {
-    var voulue = new URLSearchParams(location.search).get("prestation");
-    appelApi("/prestations").then(function (liste) {
-      elPrestations.innerHTML = "";
-      if (!liste.length) { elPrestations.innerHTML = '<p class="mlb-muted">Aucune prestation pour le moment.</p>'; return; }
-      liste.forEach(function (p) {
-        var b = document.createElement("button");
-        b.type = "button";
-        b.className = "mlb-chip";
-        b.innerHTML = echapper(p.nom) + "<small>" + prix(p.prix) + (p.description ? " · " + echapper(p.description) : "") + "</small>";
-        b.addEventListener("click", function () { etat.prestation = p; marquerActif(elPrestations, b); majRecap(); });
-        elPrestations.appendChild(b);
-        if (voulue && !etat.prestation && sansAccents(p.nom).indexOf(sansAccents(voulue)) !== -1) b.click();
-      });
-    }).catch(function (err) {
-      elPrestations.innerHTML = '<p class="mlb-muted">' + texteErreur(err) + "</p>";
-    });
-  }
-
-  // 2. Jours (le dimanche est fermé, comme dans l'API)
+  // 1. Jours (le dimanche est fermé, comme dans l'API)
   function afficherJours() {
     var aujourdhui = new Date();
     for (var i = 0; i < JOURS_AFFICHES; i++) {
@@ -253,7 +226,7 @@
     }
   }
 
-  // 3. Créneaux libres
+  // 2. Créneaux libres
   function chargerCreneaux(jour) {
     elCreneaux.innerHTML = '<p class="mlb-muted">Recherche des créneaux libres…</p>';
     appelApi("/creneaux?jour=" + jour).then(function (data) {
@@ -273,7 +246,7 @@
     }).catch(function (err) { elCreneaux.innerHTML = '<p class="mlb-muted">' + texteErreur(err) + "</p>"; });
   }
 
-  // 4. Envoi du rendez-vous
+  // 3. Envoi du rendez-vous
   form.addEventListener("submit", function (e) {
     e.preventDefault();
     if (btn.disabled) return;
@@ -282,7 +255,6 @@
     btn.disabled = true;
     btn.textContent = "Réservation en cours…";
     var corps = {
-      prestation_id: etat.prestation.id,
       client_nom: form.elements["client_nom"].value.trim(),
       client_email: form.elements["client_email"].value.trim(),
       client_telephone: form.elements["client_telephone"].value.trim(),
@@ -295,7 +267,7 @@
         elConfirmation.hidden = false;
         elConfirmation.innerHTML =
           "<h3>C'est réservé, " + echapper(corps.client_nom.split(" ")[0]) + "</h3>" +
-          "<p>" + echapper(etat.prestation.nom) + ", " + dateLongue(etat.jour) + " à " + heureLisible(etat.heure) + ".</p>" +
+          "<p>" + dateLongue(etat.jour) + " à " + heureLisible(etat.heure) + ".</p>" +
           "<p>Un email de confirmation part à <strong>" + echapper(corps.client_email) + "</strong> (pensez à regarder dans les indésirables).</p>" +
           "<p>Rendez-vous n°" + rdv.id + ". Votre code de gestion :</p>" +
           '<p class="mlb-code">' + echapper(rdv.jeton) + "</p>" +
@@ -329,7 +301,7 @@
     elRdv.hidden = false;
     elRdv.innerHTML =
       '<div class="mlb-rdv-card"><p class="mlb-rdv-title">' + echapper(dateLongue(jour)) + " à " + heureLisible(heure) + "</p>" +
-      "<p>" + (p ? echapper(p.nom) + " · " + prix(p.prix) : "Prestation") + "</p>" +
+      (p ? "<p>" + echapper(p.nom) + " · " + prix(p.prix) + "</p>" : "") +
       "<p>Au nom de " + echapper(rdv.client_nom) + " · n°" + rdv.id + "</p></div>" +
       (message ? '<p class="mlb-ok">' + echapper(message) + "</p>" : "") +
       (modifiable
@@ -405,7 +377,7 @@
     var bouton = formGerer.querySelector("button");
     bouton.disabled = true;
     acces = { id: id, jeton: jeton };
-    Promise.all([appelApi("/rendez-vous/" + id, avecJeton("GET")), appelApi("/prestations")])
+    Promise.all([appelApi("/rendez-vous/" + id, avecJeton("GET")), appelApi("/prestations").catch(function () { return []; })])
       .then(function (res) {
         res[1].forEach(function (p) { prestationsParId[p.id] = p; });
         formGerer.hidden = true;
@@ -430,7 +402,6 @@
     try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
     formGerer.dispatchEvent(new Event("submit", { cancelable: true }));
   }
-  chargerPrestations();
   afficherJours();
 })();
 </script>
